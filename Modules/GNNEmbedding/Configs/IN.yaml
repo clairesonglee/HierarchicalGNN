@@ -1,5 +1,5 @@
 # Input/output configuration
-input_dir: /global/cfs/cdirs/m3443/data/trackml-codalab/gnn_processed/1GeV_pt_cut_quickstart_example
+input_dir: /data/FNAL/events
 
 # Dataset parameters
 datatype_names: [train, val, test] # Which directory prefixes to use, assuming at least a train dataset 
