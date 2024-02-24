@@ -6,6 +6,7 @@ from EdgeClassifier.Models.IN import EC_InteractionGNN
 from GNNEmbedding.Models.IN import Embedding_InteractionGNN
 from GNNEmbedding.Models.HGNN_GMM import Embedding_HierarchicalGNN_GMM
 from BipartiteClassification.Models.HGNN_GMM import BC_HierarchicalGNN_GMM
+from gMRT.Models.HGNN_GMM import gMRT
 
 path = "../Modules/"
 
@@ -35,6 +36,10 @@ def model_selector(model_name, sweep_configs = {}):
         with open(path + "BipartiteClassification/Configs/HGNN_GMM.yaml") as f:
             hparams = yaml.load(f, Loader=yaml.FullLoader) 
         model = BC_HierarchicalGNN_GMM(process_hparams({**hparams, **sweep_configs}))      
+    elif model_name == "gMRT" or model_name == "5":
+        with open(path + "gMRT/Configs/HGNN_GMM.yaml") as f:
+            hparams = yaml.load(f, Loader=yaml.FullLoader) 
+        model = gMRT(process_hparams({**hparams, **sweep_configs}))      
     else:
         raise ValueError("Can't Find Model Name {}!".format(model_name))
         
