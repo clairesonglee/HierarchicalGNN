@@ -194,7 +194,26 @@ def make_mlp(
             layers.append(nn.LayerNorm(sizes[-1]))
         layers.append(output_activation())
     return nn.Sequential(*layers)
+
+
+def match_dims(
+    input_size,
+    output_size,
+    output_activation="GELU",
+    layer_norm=False,
+):
+    """Match MLP dimensions with specified fully-connected layers."""
+    if output_activation is not None:
+      output_activation = getattr(nn, output_activation)
+    layers = []
+    layers.append(nn.Linear(input_size, output_size))
+    if layer_norm:
+      layers.append(nn.LayerNorm(output_size))
+    if output_activation is not None:
+      layers.append(output_activation())
+    return nn.Sequential(*layers)
     
+
 def find_neighbors(embedding1, embedding2, r_max=1.0, k_max=10):
     embedding1 = embedding1.clone().detach().reshape((1, embedding1.shape[0], embedding1.shape[1]))
     embedding2 = embedding2.clone().detach().reshape((1, embedding2.shape[0], embedding2.shape[1]))

@@ -16,7 +16,7 @@ from ..gmrt_base import gMRTBase
 
 sys.path.append("../..")
 from gnn_utils import InteractionGNNCell, HierarchicalGNNCell, DynamicGraphConstruction
-from utils import make_mlp
+from utils import make_mlp, match_dims
 
 from time import time
     
@@ -226,42 +226,33 @@ class gMRT(gMRTBase):
     def __init__(self, hparams):
         super().__init__(hparams) 
 
-        profiling = True
+        profiling = False #True
         self.profiling = profiling
         if profiling:
           init_time = time()
 
         # Setup input network
-        self.node_encoder = make_mlp(
+        self.node_encoder = match_dims(
             hparams["spatial_channels"],
-            hparams["hidden"],
             hparams["latent"],
-            hparams["nb_node_layer"],
-            output_activation=hparams["hidden_activation"],
-            hidden_activation=hparams["hidden_activation"],
             layer_norm=hparams["layernorm"],
+            output_activation=hparams["hidden_activation"],
         )
 
         # The edge network computes new edge features from connected nodes
-        self.edge_encoder = make_mlp(
+        self.edge_encoder = match_dims(
             2 * (hparams["spatial_channels"]),
-            hparams["hidden"],
             hparams["latent"],
-            hparams["nb_edge_layer"],
             layer_norm=hparams["layernorm"],
             output_activation=hparams["hidden_activation"],
-            hidden_activation=hparams["hidden_activation"],
         )
 
         # output layers
-        self.output_layer = make_mlp(
+        self.output_layer = match_dims(
             hparams["latent"],
-            hparams["hidden"],
             hparams["emb_dim"],
-            hparams["output_layers"],
             layer_norm=hparams["layernorm"],
             output_activation= None,
-            hidden_activation=hparams["hidden_output_activation"],
         )
         
         self.hgnn_block = HierarchicalGNNBlock(hparams, self.log)
