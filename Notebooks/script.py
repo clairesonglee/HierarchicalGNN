@@ -38,9 +38,7 @@ def resume():
 	#training_id = input("input the wandb run ID to resume the run")
 	training_id = "1pxhnaa6"
 	model_path = "{}{}{}/checkpoints/last.ckpt".format(ROOT_PATH, "TrackML_1GeV/", training_id)
-	print('Model path = ', model_path)
 	ckpt = torch.load(model_path)
-	print('Checkpoint model name = ', ckpt["hyper_parameters"]["model"])
 	model = model_selector(ckpt["hyper_parameters"]["model"], ckpt["hyper_parameters"])
 	#model = model_selector("4")
 	    
@@ -49,74 +47,75 @@ def resume():
 	accumulator = GradientAccumulationScheduler(scheduling={0: 1, 4: 2, 8: 4})
 	trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
 	trainer.fit(model, ckpt_path=model_path)
-'''
-    def load_my_state_dict(self, state_dict):
-        own_state = self.state_dict()
-        for param_tensor in own_state:
-          print(param_tensor, "\t", own_state[param_tensor].size())
-        layers = ['node_encoder','edge_encoder','output_layer']
-        layer_num = 2
-        layer_types = ['weight','bias']
-        for layer in layers:
-          for i in range(layer_num):
-            for layer_type in layer_types:
-              param_name = layer+'.'+str(i)+'.'+layer_type
-              print('Param name = ', param_name)
-              test = own_state[param_name]
-              #del own_state['param_name']
-              print('test pop = ', test)
 
-        for name, param in state_dict.items():
-          if name not in own_state:
-            continue
-          if isinstance(param, Parameter):
-            # backwards compatibility for serialized parameters
-            param = param.data
-            own_state[name].copy_(param)
-'''
-def switch():
+#----------------------------------------------------------------------------------------
+def update(save_ckpt):
 	# Load input and setup logger
 	training_id = "TrackML_1GeV/1pxhnaa6"
-	logger = WandbLogger(project="TrackML_1GeV")
+	#logger = WandbLogger(project="TrackML_1GeV")
 	#logger = None
 
 	# Load checkpoint from Hierarchical Pooling NN
 	model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
 	ckpt = torch.load(model_path)
-	print('Model path = ', model_path)
-	print('Checkpoint model name = ', ckpt["hyper_parameters"]["model"])
 
 	# Initialize model and parameters
 	model_name = "4"
 	model = model_selector(model_name)
  	#model = model_selector("4")
 	kaiming_init(model)
-	
+	'''
+	print('Checkpoint keys = ', ckpt.keys())
+	print('Prev optim dict len = ', len(ckpt["optimizer_states"]))
+	print('Prev optim dict = ', ckpt["optimizer_states"].keys())
+	print('Curr optim dict len = ', len(optimizer.load_state_dict()))
+	'''
 	# Load pretrained parameters from checkpoint when possible
-
-	#print('Initialized model param length = ', len(model.state_dict()))
-	#print('Checkpointed model param length = ', len(prev_state_dict))
-
 	num_init_params = 11
 	prev_state_dict = ckpt["state_dict"]
 	curr_state_dict = model.state_dict()
 	plen, clen = len(prev_state_dict)-num_init_params, len(curr_state_dict)
 	for i in range(1, plen):
-	  print('Curr idx = ', -i)
 	  prev_param = list(prev_state_dict)[-i]
 	  curr_param = list(curr_state_dict)[-i]
-	  print('Compare param names = ', prev_param, curr_param)
 	  assert prev_param == curr_param
 	  param = prev_state_dict[prev_param].data
 	  curr_state_dict[curr_param].copy_(param) 
 
+	# Save updated params to new checkpoint file 
+	if save_ckpt:
+	  ckpt["state_dict"] = curr_state_dict
+	  model_path = "{}{}/checkpoints/updated.ckpt".format(ROOT_PATH, training_id)
+	  print('Saving checkpoint to path: ', model_path)
+	  torch.save(ckpt, model_path)
+
+	return curr_state_dict
+
+def switch(state_dict, save_ckpt):
+	# Load input and setup logger
+	training_id = "TrackML_1GeV/1pxhnaa6"
+	logger = WandbLogger(project="TrackML_1GeV")
+	if save_ckpt:
+	  model_path = "{}{}/checkpoints/updated.ckpt".format(ROOT_PATH, training_id)
+	else:
+	  model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
+	ckpt = torch.load(model_path)
+
+	# Initialize model and parameters
+	model_name = "4"
+	model = model_selector(model_name)
+
 	# Setup model for training
-	model.load_state_dict(curr_state_dict, strict=False)
-	#optimizer.load_state_dict(chkpt['optimizer_state_dict'])
-	#loss = chkpt['loss']
+	if not save_ckpt:
+	  model.load_state_dict(state_dict, strict=False)
+	  #optimizer.load_state_dict(chkpt['optimizer_state_dict'])
+	  #loss = chkpt['loss']
 	#accumulator = GradientAccumulationScheduler(scheduling={0: 1, 4: 2, 8: 4})
 	trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
-	trainer.fit(model)
+	if save_ckpt:
+	  trainer.fit(model, ckpt_path=model_path)
+	else:
+	  trainer.fit(model)
 
 #----------------------------------------------------------------------------------------
 def test():
@@ -148,8 +147,10 @@ def test():
 main()
 print("Training new model")
 '''
+save_ckpt = False
 #resume()
 #test()
-switch()
+state_dict = update(save_ckpt)
+switch(state_dict, save_ckpt)
 print("Resuming training on model")
 #'''
