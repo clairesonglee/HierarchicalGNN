@@ -1,5 +1,6 @@
 # System imports
 import sys
+from time import time
 
 # 3rd party imports
 from pytorch_lightning import LightningModule
@@ -55,6 +56,14 @@ class BipartiteClassificationBase(LightningModule):
             return DataLoader(self.testset, batch_size=1, num_workers=16)
         else:
             return None
+
+    def on_train_epoch_start(self):
+        self.epoch_time = time()
+
+    def on_train_epoch_end(self):
+        self.epoch_time = time() - self.epoch_time
+        self.log("epoch_time", self.epoch_time)
+        print("Epoch time = ", self.epoch_time)
 
     def configure_optimizers(self):
         optimizer = [
