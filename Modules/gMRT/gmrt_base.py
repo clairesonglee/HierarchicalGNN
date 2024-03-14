@@ -63,7 +63,13 @@ class gMRTBase(LightningModule):
     def on_train_epoch_end(self):
         self.epoch_time = time() - self.epoch_time
         self.log("epoch_time", self.epoch_time)
-        print("Epoch time = ", self.epoch_time)
+
+        pooling_time = self.hgnn_block.epoch_pooling_time 
+        graph_construct_time = self.hgnn_block.epoch_graph_construct_time 
+        self.log("pooling_time", pooling_time)
+        self.log("graph_construct_time", graph_construct_time)
+        self.hgnn_block.epoch_pooling_time = 0.
+        self.hgnn_block.epoch_graph_construct_time = 0.
 
     def configure_optimizers(self):
         optimizer = [
@@ -192,11 +198,15 @@ class gMRTBase(LightningModule):
         
     
     def training_step(self, batch, batch_idx):
-       
-        bipartite_graph, bipartite_scores, intermediate_embeddings = self(batch.x, batch.edge_index)
+        load_dset = True
+
+        bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid)
         
         # Compute embedding loss of edges using PID truth (whenever two ends of an edge have the same PID then define as true otherwise false)
-        y_pid = batch.pid[batch.edge_index[0]] == batch.pid[batch.edge_index[1]]
+        if load_dset == True:
+          y_pid = pid[batch.edge_index[0]] == pid[batch.edge_index[1]]
+        else:
+          y_pid = batch.pid[batch.edge_index[0]] == batch.pid[batch.edge_index[1]]
         weights = self.get_emb_weight(batch, batch.edge_index, y_pid)
         hinge, dist = self.get_hinge_distance(batch, intermediate_embeddings, batch.edge_index, y_pid)
 
@@ -229,12 +239,16 @@ class gMRTBase(LightningModule):
         """
         This method is shared between validation steps and test steps
         """
-        
-        bipartite_graph, bipartite_scores, intermediate_embeddings = self(batch.x, batch.edge_index)
+        load_dset = True 
+
+        bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid)
         
         # Compute embedding loss
 
-        y_pid = batch.pid[batch.edge_index[0]] == batch.pid[batch.edge_index[1]]
+        if load_dset == True:
+          y_pid = pid[batch.edge_index[0]] == pid[batch.edge_index[1]]
+        else:
+          y_pid = batch.pid[batch.edge_index[0]] == batch.pid[batch.edge_index[1]]
         weights = self.get_emb_weight(batch, batch.edge_index, y_pid)
         hinge, dist = self.get_hinge_distance(batch, intermediate_embeddings, batch.edge_index, y_pid)
 

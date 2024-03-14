@@ -63,8 +63,12 @@ def load_from_pretrained(model, path = None, ckpt = None):
     else:
         pass
     state_dict = ckpt["state_dict"]
+    #model.load_my_state_dict(state_dict)
     model.load_state_dict(state_dict, strict=False)
     del state_dict
     
     return model
+
+
+
 

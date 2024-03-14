@@ -195,6 +195,16 @@ def make_mlp(
         layers.append(output_activation())
     return nn.Sequential(*layers)
 
+class PrintLayer(nn.Module):
+    def __init__(self, layer_type):
+        super(PrintLayer, self).__init__()
+        self.layer_type = layer_type
+    def forward(self, x):
+        print('Layer type = ', self.layer_type)
+        #print(x)
+        print(self)
+        #print('bias = ', x.bias)
+        return x
 
 def match_dims(
     input_size,
@@ -203,6 +213,7 @@ def match_dims(
     layer_norm=False,
 ):
     """Match MLP dimensions with specified fully-connected layers."""
+    #layers.append(PrintLayer("gelu"))
     if output_activation is not None:
       output_activation = getattr(nn, output_activation)
     layers = []

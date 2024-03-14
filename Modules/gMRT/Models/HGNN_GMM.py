@@ -11,6 +11,7 @@ from sklearn.mixture import GaussianMixture
 import cugraph
 from scipy.optimize import fsolve
 import numpy as np
+import uuid
 
 from ..gmrt_base import gMRTBase
 
@@ -33,7 +34,13 @@ class HierarchicalGNNBlock(nn.Module):
         """
         Initialise the Lightning Module that can scan over different GNN training regimes
         """                
-        
+        self.data_dir = hparams["data_dir"]
+        self.super_dir = hparams["super_dir"]
+        self.read_counter = 0
+        self.write_counter = 0
+        self.load_dset = True
+        self.create_dset = True
+ 
         self.supernode_encoder = make_mlp(
             hparams["latent"],
             hparams["hidden"],
@@ -78,6 +85,19 @@ class HierarchicalGNNBlock(nn.Module):
         
         self.log = logging
         self.hparams = hparams
+
+        # Initialize timer variables
+        self.cluster_time = 0.
+        self.center_time = 0.
+        self.construct_time = 0.
+        self.graph_init_time = 0.
+        self.data_write_time = 0.
+        self.preprocess_time = 0.
+        self.layer_time = 0.
+
+        # Epoch pooling and graph construction time
+        self.epoch_pooling_time = 0.
+        self.epoch_graph_construct_time = 0.
     
     def determine_cut(self, cut0):
         """
@@ -102,6 +122,7 @@ class HierarchicalGNNBlock(nn.Module):
             
       
     def clustering(self, x, embeddings, graph):
+        #print('Embedding = ', embeddings)
         with torch.no_grad():
             
             # Compute cosine similarity transformed by archypertangent
@@ -152,9 +173,9 @@ class HierarchicalGNNBlock(nn.Module):
                 clusters = self.get_cluster_labels(connected_components, x)
             
             return clusters
-        
-    def forward(self, x, embeddings, nodes, edges, graph):
-        profiling = False
+
+    def preprocess_graphs(self, x, embeddings, nodes, edges, graph, pid):
+        profiling = True
         
         x.requires_grad = True
         
@@ -186,12 +207,96 @@ class HierarchicalGNNBlock(nn.Module):
         # Initialize supernode & edges by aggregating node features. Normalizing with 1-norm to improve training stability
 
         if profiling:
-          init_time = time()
+          graph_init_time = time()
         supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
         supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
         superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
+        ''' 
+        print('Supergraph dim = ', super_graph.size)
+        print('Means dim = ', means.size())
+        print('Nodes dim = ', nodes.size())
+        print('Edges dim = ', edges.size())
+        ''' 
         if profiling:
-          init_time = time() - init_time
+          graph_init_time = time() - graph_init_time
+          data_write_time = time()
+        
+        # Save preprocessed graphs to data directory
+        data_dir = self.data_dir
+        filename = str(self.write_counter)
+        filepath = data_dir + '/' + filename
+        data = {'nodes': nodes, 'edges': edges, 'graph': graph,
+                'supernodes': supernodes, 'superedges': superedges, 
+                'bipartite_graph': bipartite_graph, 'bipartite_edge_weights': bipartite_edge_weights,
+                'super_graph': super_graph, 'super_edge_weights': super_edge_weights, 'pid': pid}
+        torch.save(data, filepath) 
+        # Save supernodes, edges, and graphs to separate directory
+        #super_dir = self.super_dir
+        #super_filepath = super_dir + '/' + filename
+        #super_data = {'supernodes': supernodes, 'superedges': superedges,
+        #            'super_graph': super_graph, 'super_edge_weights': super_edge_weights}
+        #torch.save(super_data, super_filepath) 
+        self.write_counter += 1
+        
+        if profiling:
+          data_write_time = time() - data_write_time
+
+          self.cluster_time += cluster_time
+          self.center_time += center_time
+          self.construct_time += construct_time
+          self.graph_init_time += graph_init_time
+          self.data_write_time += data_write_time
+          self.preprocess_time = self.cluster_time + self.center_time + \
+                                 self.construct_time + self.graph_init_time + \
+                                 self.data_write_time
+
+          self.epoch_pooling_time += cluster_time + center_time
+          self.epoch_graph_construct_time += construct_time + graph_init_time
+          '''
+          print("Hierarchical GNN PREprocessing")
+          print("---------------------------------")
+          print("Cluster Time =             ", self.cluster_time)
+          print("Compute Time =             ", self.center_time)
+          print("Construct Time =           ", self.construct_time)
+          print("Node Initialization Time = ", self.graph_init_time)
+          print("Preprocessing Time = ", self.preprocess_time)
+          '''
+        return supernodes, superedges, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights
+    
+    def forward(self, x, embeddings, nodes, edges, graph, pid):
+        
+        x.requires_grad = True
+        profiling = False
+        if self.create_dset == True:
+          supernodes, superedges, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights = self.preprocess_graphs(x, embeddings, nodes, edges, graph, pid)
+        else:
+          clusters = self.clustering(x, embeddings, graph)
+          means = scatter_mean(embeddings[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
+          means = nn.functional.normalize(means)
+          super_graph, super_edge_weights = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
+          bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
+          supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
+          supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
+          superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
+
+        
+        if self.load_dset == True:
+          filepath = self.data_dir + '/' + str(self.read_counter % 310) #300
+          print('Filepath = ', filepath)
+          data = torch.load(filepath)
+          nodes = data["nodes"]
+          edges = data["edges"]
+          graph = data["graph"]
+          supernodes = data["supernodes"]
+          superedges = data["superedges"]
+          bipartite_graph = data["bipartite_graph"]
+          bipartite_edge_weights = data["bipartite_edge_weights"]
+          super_graph = data["super_graph"]
+          super_edge_weights = data["super_edge_weights"]
+          pid = data["pid"]
+          self.read_counter += 1
+
+        if profiling:
           layer_time = time()
 
         for layer in self.hgnn_cells:
@@ -208,14 +313,12 @@ class HierarchicalGNNBlock(nn.Module):
           layer_time = time() - layer_time
 
         if profiling:
-          print("Hierarchical GNN Timing Breakdown")
-          print("Cluster Time =             ", cluster_time)
-          print("Compute Time =             ", center_time)
-          print("Construct Time =           ", construct_time)
-          print("Node Initialization Time = ", init_time)
-          print("Layer Construction Time =  ", layer_time)
+          self.layer_time += layer_time
+          print("Hierarchical GNN POSTprocessing")
+          print("---------------------------")
+          print("Layer Construction Time =  ", self.layer_time)
 
-        return nodes, supernodes, bipartite_graph
+        return nodes, supernodes, bipartite_graph, pid
     
 class gMRT(gMRTBase):
 
@@ -227,6 +330,7 @@ class gMRT(gMRTBase):
         super().__init__(hparams) 
 
         profiling = False #True
+
         self.profiling = profiling
         if profiling:
           init_time = time()
@@ -269,10 +373,12 @@ class gMRT(gMRTBase):
         
         if profiling:
           self.init_time = time() - init_time
-          print("Initialization Time = ", self.init_time)
+          #print("Initialization Time = ", self.init_time)
           self.pool_time = 0. 
         
-    def forward(self, x, graph):
+    def forward(self, x, graph, pid):
+        print('Graph PID = ', pid)
+
         if self.profiling:
           curr_pool_time = time()
         
@@ -282,18 +388,27 @@ class gMRT(gMRTBase):
         
         nodes = checkpoint(self.node_encoder, x)
         edges = checkpoint(self.edge_encoder, torch.cat([x[directed_graph[0]], x[directed_graph[1]]], dim=1))
+        '''
+        for i, layer in enumerate(self.node_encoder):
+          if hasattr(layer, 'bias') and layer.bias is not None:
+            print(f"Layer {i}: {layer.bias.data}")
+        '''
         embeddings = self.output_layer(nodes)
         embeddings = nn.functional.normalize(embeddings)
         
-        nodes, supernodes, bipartite_graph = self.hgnn_block(x, embeddings, nodes, edges, directed_graph) 
+        nodes, supernodes, bipartite_graph, pid = self.hgnn_block(x, embeddings, nodes, edges, directed_graph, pid) 
 
         bipartite_scores = torch.sigmoid(
             checkpoint(self.bipartite_output_layer, torch.cat([nodes[bipartite_graph[0]], supernodes[bipartite_graph[1]]], dim = 1))
         ).squeeze()
-
+        '''
+        print("Hierarchical GNN Model State Dict = ")
+        for param_tensor in self.hgnn_block.state_dict():
+          print(param_tensor, "\t", self.hgnn_block.state_dict()[param_tensor].size())
+        '''
         if self.profiling:
           curr_pool_time = time() - curr_pool_time
           self.pool_time += curr_pool_time
-          print("Total Preprocessing (Initialization + Pooling) Time = ", self.init_time + self.pool_time)
+          #print("Total Preprocessing (Initialization + Pooling) Time = ", self.init_time + self.pool_time)
 
-        return bipartite_graph, bipartite_scores, embeddings
+        return bipartite_graph, bipartite_scores, embeddings, pid

@@ -1,5 +1,7 @@
 # Input/output configuration
 input_dir: /data/FNAL/events
+data_dir: /data/FNAL/processed
+super_dir: /data/FNAL/supergraphs
 
 # Dataset parameters
 datatype_names: [train, val, test] # Which directory prefixes to use, assuming at least a train dataset 
@@ -57,7 +59,7 @@ warmup: 100
 lr: 0.001
 factor: 0.99
 patience: 1
-max_epochs: 500
+max_epochs: 70 #500
 emb_epoch: 100
 
 # Hierarchical Structure Construction
