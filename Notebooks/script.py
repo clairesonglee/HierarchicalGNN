@@ -16,22 +16,22 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import GradientAccumulationScheduler
 
-
 checkpoint_callback = ModelCheckpoint(
     monitor='track_eff',
     mode="max",
-    save_top_k=2,
+    save_top_k=3,
     save_last=True)
 
 def main():
 	#model_name = input("input model ID/name")
-	model_name = "4"
+	model_name = "5"
 	model = model_selector(model_name)
 	kaiming_init(model)
 
 	#logger = WandbLogger(project="TrackML_1GeV")
 	logger = None
-	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
+	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
+	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH, limit_train_batches=1)
 	trainer.fit(model)
 
 def resume():
@@ -52,8 +52,9 @@ def resume():
 def update(save_ckpt):
 	# Load input and setup logger
 	training_id = "TrackML_1GeV/1pxhnaa6"
+	#training_id = "TrackML_1GeV/1h9gy9tl"
 	#logger = WandbLogger(project="TrackML_1GeV")
-	#logger = None
+	logger = None
 
 	# Load checkpoint from Hierarchical Pooling NN
 	model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
@@ -64,13 +65,11 @@ def update(save_ckpt):
 	model = model_selector(model_name)
  	#model = model_selector("4")
 	kaiming_init(model)
-	'''
-	print('Checkpoint keys = ', ckpt.keys())
-	print('Prev optim dict len = ', len(ckpt["optimizer_states"]))
-	print('Prev optim dict = ', ckpt["optimizer_states"].keys())
-	print('Curr optim dict len = ', len(optimizer.load_state_dict()))
-	'''
-	# Load pretrained parameters from checkpoint when possible
+
+	print("Checkpoint keys = ", ckpt.keys())
+	#print("Checkpoint hp = ", ckpt["callbacks"])
+
+	# Load pretrained parameters to new state dictionary
 	num_init_params = 11
 	prev_state_dict = ckpt["state_dict"]
 	curr_state_dict = model.state_dict()
@@ -82,19 +81,68 @@ def update(save_ckpt):
 	  param = prev_state_dict[prev_param].data
 	  curr_state_dict[curr_param].copy_(param) 
 
+	# Load pretrained optimizer to new optimizer
+	'''
+	prev_opt = ckpt["optimizer_states"][0]
+	opt_state = prev_opt['state']
+	opt_param_groups = prev_opt['param_groups']
+	print((type(opt_state)))
+	print((type(opt_param_groups)))
+
+	param_ids = opt_state.keys()
+	param_vals = opt_state.values()
+	'''
+	#params = opt_param_groups['params']
+	#print(len(param_vals))
+	#for item in param_vals:
+	#  print(item.keys(), len(item.values()))
+	#print(param_ids)
+	#for item in opt_param_groups:
+	#  print(item)
+	'''
+	print('=========================================================')
+	curr_opt = torch.optim.AdamW(
+                model.parameters(),
+                lr=(0.001),
+                betas=(0.9, 0.999),
+                eps=1e-08,
+                amsgrad=True,
+            )
+	print(type(curr_opt))
+	checkpoint = {"optimizer_states": curr_opt}
+	torch.save(checkpoint, 'checkpoint.pth')
+	ckpt = torch.load('checkpoint.pth')
+	curr_opt = ckpt["optimizer_states"]
+	print(curr_opt)
+	opt_state = curr_opt['state']
+	opt_param_groups = curr_opt['param_groups']
+	print((type(opt_state)))
+	print((type(opt_param_groups)))
+
+	param_ids = opt_state.keys()
+	param_vals = opt_state.values()
+	print(len(param_vals))
+	for item in param_vals:
+	  print(item.keys(), len(item.values()))
+	print(param_ids)
+	for item in opt_param_groups:
+	  print(item)
+	'''
+	#curr_opt.load_state_dict(prev_opt.state_dict())
 	# Save updated params to new checkpoint file 
 	if save_ckpt:
 	  ckpt["state_dict"] = curr_state_dict
 	  model_path = "{}{}/checkpoints/updated.ckpt".format(ROOT_PATH, training_id)
 	  print('Saving checkpoint to path: ', model_path)
 	  torch.save(ckpt, model_path)
+	curr_opt = None
+	return curr_state_dict, curr_opt
 
-	return curr_state_dict
-
-def switch(state_dict, save_ckpt):
+def switch(state_dict, optimizer, save_ckpt):
 	# Load input and setup logger
 	training_id = "TrackML_1GeV/1pxhnaa6"
-	logger = WandbLogger(project="TrackML_1GeV")
+	#logger = WandbLogger(project="TrackML_1GeV")
+	logger = None
 	if save_ckpt:
 	  model_path = "{}{}/checkpoints/updated.ckpt".format(ROOT_PATH, training_id)
 	else:
@@ -108,9 +156,10 @@ def switch(state_dict, save_ckpt):
 	# Setup model for training
 	if not save_ckpt:
 	  model.load_state_dict(state_dict, strict=False)
-	  #optimizer.load_state_dict(chkpt['optimizer_state_dict'])
+	  optimizer.load_state_dict(optimizer)
+	  #optimizer, scheduler = trainer.configure_optimizers()
 	  #loss = chkpt['loss']
-	#accumulator = GradientAccumulationScheduler(scheduling={0: 1, 4: 2, 8: 4})
+	accumulator = GradientAccumulationScheduler(scheduling={0: 1, 4: 2, 8: 4})
 	trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
 	if save_ckpt:
 	  trainer.fit(model, ckpt_path=model_path)
@@ -124,7 +173,8 @@ def test():
 	    #"majority_cut": float(input("majority cut (0.5 for loose matching, 0.9 for strict matching, 1.0 for perfect matching")),
 	    "score_cut": 0.7
 	}
-	training_id = "TrackML_1GeV/1pxhnaa6"
+	#training_id = "TrackML_1GeV/1pxhnaa6"
+	training_id = "TrackML_1GeV/1h9gy9tl"
 	model_path = "{}{}/checkpoints/".format(ROOT_PATH, training_id)
 	model_paths = os.listdir(model_path)
 	model_paths.remove("last.ckpt")
@@ -143,14 +193,10 @@ def test():
 	model.setup("test")
 	trainer = Trainer(gpus=1)
 	test_results = trainer.test(model, model.test_dataloader())[0]
-'''
+
 main()
-print("Training new model")
-'''
-save_ckpt = False
+#save_ckpt = False
 #resume()
 #test()
-state_dict = update(save_ckpt)
-switch(state_dict, save_ckpt)
-print("Resuming training on model")
-#'''
+#state_dict, optimizer = update(save_ckpt)
+#switch(state_dict, save_ckpt)
