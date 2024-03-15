@@ -22,6 +22,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 sys.path.append("../..")
 from utils import TrackMLDataset, load_dataset_paths, FRNN_graph, graph_intersection
 from tracking_utils import eval_metrics
+from gMRT.gmrt_utils import transfer_params
 
 class gMRTBase(LightningModule):
     def __init__(self, hparams):
@@ -59,6 +60,14 @@ class gMRTBase(LightningModule):
 
     def on_train_epoch_start(self):
         self.epoch_time = time()
+ 
+        if self.current_epoch == 1:
+          print("Transferring parameters to new model")
+
+          prev_state_dict = self.model.state_dict()
+          curr_state_dict = transfer_params(prev_state_dict)
+          self.model.load_state_dict(curr_state_dict, strict=False)
+          print("Successfully transferred parameters")
 
     def on_train_epoch_end(self):
         self.epoch_time = time() - self.epoch_time
@@ -198,7 +207,7 @@ class gMRTBase(LightningModule):
         
     
     def training_step(self, batch, batch_idx):
-        load_dset = True
+        load_dset = False
 
         bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid)
         
@@ -239,7 +248,7 @@ class gMRTBase(LightningModule):
         """
         This method is shared between validation steps and test steps
         """
-        load_dset = True 
+        load_dset = False 
 
         bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid)
         
