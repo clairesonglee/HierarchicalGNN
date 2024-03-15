@@ -61,14 +61,6 @@ class gMRTBase(LightningModule):
     def on_train_epoch_start(self):
         self.epoch_time = time()
  
-        if self.current_epoch == 1:
-          print("Transferring parameters to new model")
-
-          prev_state_dict = self.model.state_dict()
-          curr_state_dict = transfer_params(prev_state_dict)
-          self.model.load_state_dict(curr_state_dict, strict=False)
-          print("Successfully transferred parameters")
-
     def on_train_epoch_end(self):
         self.epoch_time = time() - self.epoch_time
         self.log("epoch_time", self.epoch_time)
