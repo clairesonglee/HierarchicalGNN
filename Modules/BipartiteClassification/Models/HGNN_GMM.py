@@ -151,7 +151,7 @@ class HierarchicalGNNBlock(nn.Module):
         pool_time = time()
         self.GMM_model = GaussianMixture(n_components = 2)
         pool_time = time() - pool_time
-        print("Pooling Layer Time = ", pool_time)
+        #print("Pooling Layer Time = ", pool_time)
         self.super_graph_construction = DynamicGraphConstruction("sigmoid", hparams)
         self.bipartite_graph_construction = DynamicGraphConstruction("exp", hparams)
         self.register_buffer("score_cut", torch.tensor([float("inf")]))
@@ -234,36 +234,44 @@ class HierarchicalGNNBlock(nn.Module):
             return clusters
         
     def forward(self, x, embeddings, nodes, edges, graph):
+        profiling = False
         
         x.requires_grad = True
         
         # Compute clustering
-        cluster_time = time()
+        if profiling == True: 
+          cluster_time = time()
         clusters = self.clustering(x, embeddings, graph)
-        cluster_time = time() - cluster_time
+        if profiling == True: 
+          cluster_time = time() - cluster_time
 
         # Compute Centers
-        center_time = time()
+        if profiling == True: 
+          center_time = time()
         means = scatter_mean(embeddings[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
         means = nn.functional.normalize(means)
-        center_time = time() - center_time
+        if profiling == True: 
+          center_time = time() - center_time
         
         # Construct Graphs
-        construct_time = time()
+        if profiling == True: 
+          construct_time = time()
         super_graph, super_edge_weights = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
         bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
-        construct_time = time() - construct_time
+        if profiling == True: 
+          construct_time = time() - construct_time
         
         self.log("clusters", len(means))
         
         # Initialize supernode & edges by aggregating node features. Normalizing with 1-norm to improve training stability
-        init_time = time()
+        if profiling == True: 
+          init_time = time()
         supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
         supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
         superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
-        init_time = time() - init_time
-
-        layer_time = time()
+        if profiling == True: 
+          init_time = time() - init_time
+          layer_time = time()
         for layer in self.hgnn_cells:
             nodes, edges, supernodes, superedges = layer(nodes,
                                                          edges,
@@ -276,14 +284,16 @@ class HierarchicalGNNBlock(nn.Module):
                                                          super_edge_weights)
             
         
-        layer_time = time() - layer_time
+        if profiling == True: 
+          layer_time = time() - layer_time
 
-        print("Hierarchical GNN Timing Breakdown")
-        print("Cluster Time =             ", cluster_time)
-        print("Compute Time =             ", center_time)
-        print("Construct Time =           ", construct_time)
-        print("Node Initialization Time = ", init_time)
-        print("Layer Construction Time =  ", layer_time)
+        if profiling == True: 
+          print("Hierarchical GNN Timing Breakdown")
+          print("Cluster Time =             ", cluster_time)
+          print("Compute Time =             ", center_time)
+          print("Construct Time =           ", construct_time)
+          print("Node Initialization Time = ", init_time)
+          print("Layer Construction Time =  ", layer_time)
 	
         return nodes, supernodes, bipartite_graph
     
@@ -311,6 +321,7 @@ class BC_HierarchicalGNN_GMM(BipartiteClassificationBase):
         
         
     def forward(self, x, graph):
+        profiling = False
         
         x.requires_grad = True
         
@@ -324,8 +335,9 @@ class BC_HierarchicalGNN_GMM(BipartiteClassificationBase):
         nodes, supernodes, bipartite_graph = self.hgnn_block(x, intermediate_embeddings, nodes, edges, directed_graph) 
         h_time = time() - h_time
 
-        print("Interaction Module Time = ", i_time)
-        print("Hierarchical Module Time = ", h_time)
+        if profiling == True:
+          print("Interaction Module Time = ", i_time)
+          print("Hierarchical Module Time = ", h_time)
         
         bipartite_scores = torch.sigmoid(
             checkpoint(self.bipartite_output_layer, torch.cat([nodes[bipartite_graph[0]], supernodes[bipartite_graph[1]]], dim = 1))
