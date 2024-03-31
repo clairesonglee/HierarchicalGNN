@@ -28,10 +28,11 @@ def main():
 	model = model_selector(model_name)
 	kaiming_init(model)
 
-	#logger = WandbLogger(project="TrackML_1GeV")
-	logger = None
+	logger = WandbLogger(project="TrackML_1GeV")
+	#logger = None
 	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
-	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH, limit_train_batches=1)
+	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH, limit_train_batches=1)
+	trainer = Trainer(gpus=1, max_epochs=100, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
 	trainer.fit(model)
 
 def resume():
@@ -51,13 +52,14 @@ def resume():
 #----------------------------------------------------------------------------------------
 def update(save_ckpt):
 	# Load input and setup logger
-	training_id = "TrackML_1GeV/1pxhnaa6"
-	#training_id = "TrackML_1GeV/1h9gy9tl"
+	#training_id = "TrackML_1GeV/1pxhnaa6"
+	training_id = "TrackML_1GeV/90y92jp7"
 	#logger = WandbLogger(project="TrackML_1GeV")
 	logger = None
 
 	# Load checkpoint from Hierarchical Pooling NN
-	model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
+	#model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
+	model_path = "{}{}/checkpoints/epoch=34-step=10500.ckpt".format(ROOT_PATH, training_id)
 	ckpt = torch.load(model_path)
 
 	# Initialize model and parameters
@@ -66,7 +68,7 @@ def update(save_ckpt):
  	#model = model_selector("4")
 	kaiming_init(model)
 
-	print("Checkpoint keys = ", ckpt.keys())
+	#print("Checkpoint keys = ", ckpt.keys())
 	#print("Checkpoint hp = ", ckpt["callbacks"])
 
 	# Load pretrained parameters to new state dictionary
@@ -140,13 +142,14 @@ def update(save_ckpt):
 
 def switch(state_dict, optimizer, save_ckpt):
 	# Load input and setup logger
-	training_id = "TrackML_1GeV/1pxhnaa6"
-	#logger = WandbLogger(project="TrackML_1GeV")
-	logger = None
+	training_id = "TrackML_1GeV/90y92jp7"
+	logger = WandbLogger(project="TrackML_1GeV")
+	#logger = None
 	if save_ckpt:
 	  model_path = "{}{}/checkpoints/updated.ckpt".format(ROOT_PATH, training_id)
 	else:
-	  model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
+	  #model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
+	  model_path = "{}{}/checkpoints/epoch=34-step=10500.ckpt".format(ROOT_PATH, training_id)
 	ckpt = torch.load(model_path)
 
 	# Initialize model and parameters
@@ -156,11 +159,12 @@ def switch(state_dict, optimizer, save_ckpt):
 	# Setup model for training
 	if not save_ckpt:
 	  model.load_state_dict(state_dict, strict=False)
-	  optimizer.load_state_dict(optimizer)
+	  #optimizer.load_state_dict(optimizer)
 	  #optimizer, scheduler = trainer.configure_optimizers()
 	  #loss = chkpt['loss']
 	accumulator = GradientAccumulationScheduler(scheduling={0: 1, 4: 2, 8: 4})
-	trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
+	#trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
+	trainer = Trainer(gpus=1, max_epochs=300, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
 	if save_ckpt:
 	  trainer.fit(model, ckpt_path=model_path)
 	else:
@@ -174,7 +178,7 @@ def test():
 	    "score_cut": 0.7
 	}
 	#training_id = "TrackML_1GeV/1pxhnaa6"
-	training_id = "TrackML_1GeV/1h9gy9tl"
+	training_id = "TrackML_1GeV/90y92jp7"
 	model_path = "{}{}/checkpoints/".format(ROOT_PATH, training_id)
 	model_paths = os.listdir(model_path)
 	model_paths.remove("last.ckpt")
@@ -194,9 +198,9 @@ def test():
 	trainer = Trainer(gpus=1)
 	test_results = trainer.test(model, model.test_dataloader())[0]
 
-main()
-#save_ckpt = False
+#main()
+save_ckpt = False
 #resume()
 #test()
-#state_dict, optimizer = update(save_ckpt)
-#switch(state_dict, save_ckpt)
+state_dict, optimizer = update(save_ckpt)
+switch(state_dict, optimizer, save_ckpt)
