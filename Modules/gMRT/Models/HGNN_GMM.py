@@ -39,7 +39,7 @@ class HierarchicalGNNBlock(nn.Module):
         self.read_counter = 0
         self.write_counter = 0
         self.load_dset = True
-        self.create_dset = True
+        self.create_dset = False
  
         self.supernode_encoder = make_mlp(
             hparams["latent"],
@@ -278,14 +278,30 @@ class HierarchicalGNNBlock(nn.Module):
           supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
           supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
           superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
+          print("generated supernodes = ", supernodes.shape)
+          print("generated superedges = ", superedges.shape)
+          print("generated nodes = ", nodes.shape)
+          print("generated edges = ", edges.shape)
+          print("generated bipartite graph = ", bipartite_graph.shape)
+          print("generated bipartite edge weights = ", bipartite_edge_weights.shape)
 
         
         if self.load_dset == True:
-          filepath = self.data_dir + '/' + str(self.read_counter % 310) #300
-          print('Filepath = ', filepath)
-          data = torch.load(filepath)
-          nodes = data["nodes"]
-          edges = data["edges"]
+          while True:
+            # data_dir = /data/FNAL/processed/
+            filepath = self.data_dir + '/' + str(self.read_counter % 300)
+            #print('Filepath = ', filepath)
+            data = torch.load(filepath)
+            saved_nodes = data["nodes"]
+            saved_edges = data["edges"]
+            print("loaded nodes = ", saved_nodes.shape)
+            print("loaded edges = ", saved_edges.shape)
+            if (nodes.shape == saved_nodes.shape) and (edges.shape == saved_edges.shape):
+              nodes = data["nodes"]
+              edges = data["edges"]
+              print("Matched with file ", self.read_counter % 300)
+              break
+            self.read_counter += 1
           graph = data["graph"]
           supernodes = data["supernodes"]
           superedges = data["superedges"]
@@ -293,8 +309,15 @@ class HierarchicalGNNBlock(nn.Module):
           bipartite_edge_weights = data["bipartite_edge_weights"]
           super_graph = data["super_graph"]
           super_edge_weights = data["super_edge_weights"]
-          pid = data["pid"]
-          self.read_counter += 1
+          #pid = data["pid"]
+
+          print("file index = ", self.read_counter)
+          print("saved supernodes = ", supernodes.shape)
+          print("saved superedges = ", superedges.shape)
+          print("saved nodes = ", nodes.shape)
+          print("saved edges = ", edges.shape)
+          print("saved bipartite graph = ", bipartite_graph.shape)
+          print("saved bipartite edge weights = ", bipartite_edge_weights.shape)
 
         if profiling:
           layer_time = time()

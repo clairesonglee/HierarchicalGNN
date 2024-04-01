@@ -25,13 +25,14 @@ checkpoint_callback = ModelCheckpoint(
 
 def main():
 	#model_name = input("input model ID/name")
-	model_name = "4"
+	model_name = "5"
 	model = model_selector(model_name)
 	kaiming_init(model)
 
 	#logger = WandbLogger(project="TrackML_1GeV")
 	logger = None
-	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
+	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH)
+	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 50, default_root_dir=ROOT_PATH, limit_train_batches=1)
 	trainer.fit(model)
 
 def resume():
@@ -143,7 +144,7 @@ def test():
 	model.setup("test")
 	trainer = Trainer(gpus=1)
 	test_results = trainer.test(model, model.test_dataloader())[0]
-'''
+#'''
 main()
 print("Training new model")
 '''
@@ -153,4 +154,4 @@ save_ckpt = False
 state_dict = update(save_ckpt)
 switch(state_dict, save_ckpt)
 print("Resuming training on model")
-#'''
+'''
