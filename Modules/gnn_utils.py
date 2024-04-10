@@ -168,6 +168,65 @@ class HierarchicalGNNCell(nn.Module):
         
         return nodes, edges, supernodes, superedges
 
+class HierarchicalGNNCell_super(nn.Module):
+    def __init__(self, hparams):
+        super().__init__()  
+        
+        self.supernode_network = make_mlp(
+            3 * hparams["latent"],
+            hparams["hidden"],
+            hparams["latent"],
+            hparams["nb_node_layer"],
+            layer_norm=hparams["layernorm"],
+            output_activation=hparams["hidden_activation"],
+            hidden_activation=hparams["hidden_activation"],
+        )
+        
+        self.superedge_network = make_mlp(
+            3 * hparams["latent"],
+            hparams["hidden"],
+            hparams["latent"],
+            hparams["nb_edge_layer"],
+            layer_norm=hparams["layernorm"],
+            output_activation="Tanh",
+            hidden_activation=hparams["hidden_activation"],
+        )
+        
+        self.hparams = hparams
+    
+    @checkpointing 
+    def supernode_update(self, supernodes, superedges, super_graph, super_edge_weights):
+        """
+        Calculate supernode updates with checkpointing
+        """
+        x_dim, y_dim = supernodes.shape[0], supernodes.shape[1]
+        node_msg_dummy = (torch.rand(x_dim, y_dim)).to('cuda:0')
+        attn_msg_dummy = (torch.rand(x_dim, y_dim)).to('cuda:0')
+        supernodes = self.supernode_network(torch.cat([supernodes, attn_msg_dummy, node_msg_dummy], dim=-1)) + supernodes
+        return supernodes
+    
+    @checkpointing
+    def superedge_update(self, supernodes, superedges, super_graph, super_edge_weights):
+        """
+        Calculate superedge updates with checkpointing
+        """
+        superedges = self.superedge_network(torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]], superedges], dim=-1)) + superedges
+        return superedges
+       
+    def forward(self, supernodes, superedges, graph, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights):
+        """
+        Whereas the message passing in the original/super graphs is implemented by interaction network, the one in between them (bipartite message 
+        passing is descirbed by weighted graph convolution (vanilla aggregation without attention)
+        """
+        
+        # Compute new node features
+        supernodes = self.supernode_update(supernodes, superedges, super_graph, super_edge_weights)
+        
+        # Compute new edge features
+        superedges = self.superedge_update(supernodes, superedges, super_graph, super_edge_weights)
+
+        return supernodes, superedges
+
 class DynamicGraphConstruction(nn.Module):
     def __init__(self, weighting_function, hparams):
         """

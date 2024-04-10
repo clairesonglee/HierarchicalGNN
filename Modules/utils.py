@@ -54,7 +54,8 @@ class TrackMLDataset(Dataset):
         event = torch.load(self.dirs[key], map_location=torch.device(self.device))
         if "1GeV" in str(self.dirs[key]):
             event = Data.from_dict(event.__dict__) # handle older PyG data format
-        
+        print("event features = ", event)
+    
         # the MASK tensor filter out hits from event
         if self.hparams["noise"]:
             mask = (event.pid == event.pid) # If using noise then only filter out those with nan PID

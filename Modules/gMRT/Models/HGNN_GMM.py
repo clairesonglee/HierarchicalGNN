@@ -16,7 +16,7 @@ import uuid
 from ..gmrt_base import gMRTBase
 
 sys.path.append("../..")
-from gnn_utils import InteractionGNNCell, HierarchicalGNNCell, DynamicGraphConstruction
+from gnn_utils import InteractionGNNCell, HierarchicalGNNCell, HierarchicalGNNCell_super, DynamicGraphConstruction
 from utils import make_mlp, match_dims
 
 from time import time
@@ -64,14 +64,14 @@ class HierarchicalGNNBlock(nn.Module):
 
         # Initialize GNN blocks
         if hparams["share_weight"]:
-            cell = HierarchicalGNNCell(hparams)
+            cell = HierarchicalGNNCell_super(hparams)
             hgnn_cells = [
                 cell
                 for _ in range(hparams["n_hierarchical_graph_iters"])
             ]
         else:
             hgnn_cells = [
-                HierarchicalGNNCell(hparams)
+                HierarchicalGNNCell_super(hparams)
                 for _ in range(hparams["n_hierarchical_graph_iters"])
             ]
         
@@ -288,6 +288,7 @@ class HierarchicalGNNBlock(nn.Module):
           '''
         
         if self.load_dset == True:
+          '''
           self.read_counter = 0
           while self.read_counter <= 300:
             # data_dir = /data/FNAL/processed/
@@ -304,6 +305,11 @@ class HierarchicalGNNBlock(nn.Module):
               #print("matched with file ", self.read_counter)
               break
             self.read_counter += 1
+          '''
+          #self.read_counter = 0
+          filepath = self.data_dir + '/' + str(self.read_counter % 20)
+          data = torch.load(filepath)
+          self.read_counter += 1
           graph = data["graph"]
           supernodes = data["supernodes"]
           superedges = data["superedges"]
@@ -312,6 +318,7 @@ class HierarchicalGNNBlock(nn.Module):
           super_graph = data["super_graph"]
           super_edge_weights = data["super_edge_weights"]
           #pid = data["pid"]
+          
           '''
           print("saved supernodes = ", supernodes.shape)
           print("saved superedges = ", superedges.shape)
@@ -324,15 +331,13 @@ class HierarchicalGNNBlock(nn.Module):
           layer_time = time()
 
         for layer in self.hgnn_cells:
-            nodes, edges, supernodes, superedges = layer(nodes,
-                                                         edges,
-                                                         supernodes,
-                                                         superedges,
-                                                         graph,
-                                                         bipartite_graph,
-                                                         bipartite_edge_weights,
-                                                         super_graph,
-                                                         super_edge_weights)
+            supernodes, superedges = layer(supernodes,
+                                           superedges,
+                                           graph,
+                                           bipartite_graph,
+                                           bipartite_edge_weights,
+                                           super_graph,
+                                           super_edge_weights)
         if profiling:
           layer_time = time() - layer_time
 
