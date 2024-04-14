@@ -20,7 +20,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Local imports
 sys.path.append("../..")
-from utils import TrackMLDataset, load_dataset_paths, FRNN_graph, graph_intersection
+from utils import TrackMLDataset, TrackMLSuperDataset, load_dataset_paths, FRNN_graph, graph_intersection
 from tracking_utils import eval_metrics
 from gMRT.gmrt_utils import transfer_params
 
@@ -31,28 +31,43 @@ class gMRTBase(LightningModule):
         Initialise the Lightning Module
         """
         self.save_hyperparameters(hparams)
+        self.use_superdataset = True
         
     def setup(self, stage):
-        paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
-        paths = paths[:sum(self.hparams["train_split"])]
-        self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))
+        if self.use_superdataset:
+          paths = load_dataset_paths(self.hparams["super_dir"], self.hparams["datatype_names"])
+          paths = paths[:sum(self.hparams["test_split"])]
+          self.trainset, self.valset, self.testset = random_split(paths, self.hparams["test_split"], generator=torch.Generator().manual_seed(0))
+        else:
+          paths = load_dataset_paths(self.hparams["data_dir"], self.hparams["datatype_names"])
+          paths = paths[:sum(self.hparams["train_split"])]
+          self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))
         
     def train_dataloader(self):
-        self.trainset = TrackMLDataset(self.trainset, self.hparams, stage = "train", device = "cpu")
+        if self.use_superdataset:
+          self.trainset = TrackMLSuperDataset(self.trainset, self.hparams, stage = "train", device = "cpu")
+        else:
+          self.trainset = TrackMLDataset(self.trainset, self.hparams, stage = "train", device = "cpu")
         if self.trainset is not None:
             return DataLoader(self.trainset, batch_size=1, num_workers=16, shuffle = True)
         else:
             return None
 
     def val_dataloader(self):
-        self.valset = TrackMLDataset(self.valset, self.hparams, stage = "val", device = "cpu")
+        if self.use_superdataset:
+          self.valset = TrackMLSuperDataset(self.valset, self.hparams, stage = "val", device = "cpu")
+        else:
+          self.valset = TrackMLDataset(self.valset, self.hparams, stage = "val", device = "cpu")
         if self.valset is not None:
             return DataLoader(self.valset, batch_size=1, num_workers=16)
         else:
             return None
 
     def test_dataloader(self):
-        self.testset = TrackMLDataset(self.testset, self.hparams, stage = "test", device = "cpu")
+        if self.use_superdataset:
+          self.testset = TrackMLSuperDataset(self.testset, self.hparams, stage = "test", device = "cpu")
+        else:
+          self.testset = TrackMLDataset(self.testset, self.hparams, stage = "test", device = "cpu")
         if self.testset is not None:
             return DataLoader(self.testset, batch_size=1, num_workers=16)
         else:
@@ -200,8 +215,23 @@ class gMRTBase(LightningModule):
     
     def training_step(self, batch, batch_idx):
         load_dset = False
+        if load_dset:
+          data_dir = "/data/FNAL/processed"
+          filepath = data_dir + '/' + str(batch_idx % 20)
+          print("Filepath = ", filepath)
+          data = torch.load(filepath)
+          self.read_counter += 1
+          x = data["x"]
+          directed_graph = data["graph"]
+          nodes = data["supernodes"]
+          edges = data["superedges"]
+          graph = data["super_graph"]
+          pid = data["pid"]
+          edge_weights = data["super_edge_weights"]
+          bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(x, directed_graph, pid)
 
-        bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid)
+        else:
+          bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid, batch)
         
         # Compute embedding loss of edges using PID truth (whenever two ends of an edge have the same PID then define as true otherwise false)
         if load_dset == True:
@@ -241,8 +271,9 @@ class gMRTBase(LightningModule):
         This method is shared between validation steps and test steps
         """
         load_dset = False 
+        print("Enter shared eval")
 
-        bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid)
+        bipartite_graph, bipartite_scores, intermediate_embeddings, pid = self(batch.x, batch.edge_index, batch.pid, batch)
         
         # Compute embedding loss
 

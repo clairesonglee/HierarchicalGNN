@@ -22,7 +22,7 @@ def load_dataset_paths(input_dir, datatype_names):
         events = sorted([os.path.join(input_dir, name, event) for event in events])
         all_events.extend(events)
     random.seed(42)
-    random.shuffle(all_events)
+    #random.shuffle(all_events)
     return all_events
 
 class TrackMLDataset(Dataset):
@@ -54,7 +54,8 @@ class TrackMLDataset(Dataset):
         event = torch.load(self.dirs[key], map_location=torch.device(self.device))
         if "1GeV" in str(self.dirs[key]):
             event = Data.from_dict(event.__dict__) # handle older PyG data format
-        print("event features = ", event)
+        print("event = ", event)
+        #print("key, self.dirs[key]  = ", key, self.dirs[key])
     
         # the MASK tensor filter out hits from event
         if self.hparams["noise"]:
@@ -114,6 +115,104 @@ class TrackMLDataset(Dataset):
         return self.num
 
 ###
+
+class TrackMLSuperDataset(Dataset):
+    def __init__(self, dirs, hparams, stage = "train", device = "cpu"):
+        super().__init__()
+        self.dirs = dirs
+        self.num = len(dirs)
+        self.device = device
+        self.stage = stage
+        self.hparams = hparams
+
+    def __getitem__(self, key):
+        # load the event        
+        event = torch.load(self.dirs[key], map_location=torch.device(self.device))
+        if "1GeV" in str(self.dirs[key]):
+            event = Data.from_dict(event.__dict__) # handle older PyG data format
+        #print("event features = ", event.keys())
+        print("event supernodes = ", event.supernodes)
+        #print("key, self.dirs[key]  = ", key, self.dirs[key])
+        
+        # Load components to event object
+        event.nodes = event.supernodes
+        event.edges = event.superedges
+        event.graph = event.super_graph
+        event.edge_weights = event.super_edge_weights
+
+        event.supernodes = None 
+        event.superedges = None 
+        event.super_graph = None 
+        event.super_edge_weights = None 
+
+        #event_features = ['batch', 'cell_data', 'dir', 'edge_index', 'event_file', 'hid', 'inverse_mask', 'layers', 'layerwise_true_edges', 'modulewise_true_edges', 'nhits', 'pid', 'pt', 'ptr', 'scores', 'signal_mask', 'signal_true_edges', 'weights', 'x', 'y', 'y_pid']
+        print("event = ", event)
+        '''
+        for k, v in event.items():
+          if torch.is_tensor(v):
+            if torch.is_complex(v) or torch.is_floating_point(v):
+              event[k] = torch.tensor(v.cpu().detach().clone().numpy(), requires_grad=True)
+            else:
+              event[k] = torch.tensor(v.cpu().detach().clone().numpy())
+          else:
+            event[k] = v
+        '''
+        # the MASK tensor filter out hits from event
+        if self.hparams["noise"]:
+            mask = (event.pid == event.pid) # If using noise then only filter out those with nan PID
+        else:
+            mask = (event.pid != 0) # If not using noise then filter out those with PID 0, which represent that they are noise
+        if self.hparams["hard_ptcut"] > 0:
+            mask = mask & (event.pt > self.hparams["hard_ptcut"]) # Hard background cut in pT
+        if self.hparams["remove_isolated"]:
+            node_mask = torch.zeros(event.pid.shape).bool()
+            node_mask[event.edge_index.unique()] = torch.ones(1).bool() # Keep only those nodes with edges attached to it
+            mask = mask & node_mask
+        
+        # Set the pT of noise hits to be 0
+        event.pt[event.pid == 0] = 0
+        
+        # Provide inverse mask to invert the change when necessary (e.g. track evaluation with not modified files)
+        inverse_mask = torch.zeros(len(event.pid)).long()
+        inverse_mask[mask] = torch.arange(mask.sum())
+        event.inverse_mask = torch.arange(len(mask))[mask]
+        
+        # Compute number of hits (nhits) of each particle
+        _, inverse, counts = event.pid.unique(return_inverse = True, return_counts = True)
+        event.nhits = counts[inverse]
+        
+        if self.hparams["primary"]:
+            event.signal_mask = ((event.nhits >= self.hparams["n_hits"]) & (event.primary == 1))
+        else:
+            event.signal_mask = (event.nhits >= self.hparams["n_hits"])
+        
+        # Randomly remove edges if needed
+        if "edge_dropping_ratio" in self.hparams:  
+            if self.hparams["edge_dropping_ratio"] != 0:
+                edge_mask = (torch.rand(event.edge_index.shape[1]) >= self.hparams["edge_dropping_ratio"])
+                event.edge_index = event.edge_index[:, edge_mask]
+                event.y, event.y_pid = event.y[edge_mask], event.y_pid[edge_mask]
+        
+        print("event.y ", event.y)
+        for i in ["y", "y_pid"]:
+            graph_mask = mask[event.edge_index].all(0)
+            event[i] = event[i][graph_mask]
+
+        for i in ["modulewise_true_edges", "signal_true_edges", "edge_index"]:
+            event[i] = event[i][:, mask[event[i]].all(0)]
+            event[i] = inverse_mask[event[i]]
+
+        for i in ["x", "cell_data", "pid", "hid", "pt", "signal_mask"]:
+            event[i] = event[i][mask]
+            
+        if self.hparams["primary"]:
+            event.primary = event.primary[mask]
+
+        event.dir = self.dirs[key]
+        return event 
+
+    def __len__(self):
+        return self.num
 
 def graph_intersection(
     pred_graph, truth_graph, using_weights=False, weights_bidir=None

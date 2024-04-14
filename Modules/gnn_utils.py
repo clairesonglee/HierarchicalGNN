@@ -193,16 +193,15 @@ class HierarchicalGNNCell_super(nn.Module):
         )
         
         self.hparams = hparams
-    
+   
     @checkpointing 
-    def supernode_update(self, supernodes, superedges, super_graph, super_edge_weights):
+    def supernode_update(self, nodes, supernodes, superedges, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights):
         """
         Calculate supernode updates with checkpointing
         """
-        x_dim, y_dim = supernodes.shape[0], supernodes.shape[1]
-        node_msg_dummy = (torch.rand(x_dim, y_dim)).to('cuda:0')
-        attn_msg_dummy = (torch.rand(x_dim, y_dim)).to('cuda:0')
-        supernodes = self.supernode_network(torch.cat([supernodes, attn_msg_dummy, node_msg_dummy], dim=-1)) + supernodes
+        node_messages = scatter_add(bipartite_edge_weights*nodes[bipartite_graph[0]], bipartite_graph[1], dim=0, dim_size=supernodes.shape[0])
+        attention_messages = scatter_add(superedges*super_edge_weights, super_graph[1], dim=0, dim_size=supernodes.shape[0])
+        supernodes = self.supernode_network(torch.cat([supernodes, attention_messages, node_messages], dim=-1)) + supernodes
         return supernodes
     
     @checkpointing
@@ -211,7 +210,7 @@ class HierarchicalGNNCell_super(nn.Module):
         Calculate superedge updates with checkpointing
         """
         superedges = self.superedge_network(torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]], superedges], dim=-1)) + superedges
-        return superedges
+        return superedges 
        
     def forward(self, supernodes, superedges, graph, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights):
         """

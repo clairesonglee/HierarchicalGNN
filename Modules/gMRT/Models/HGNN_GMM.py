@@ -20,7 +20,85 @@ from gnn_utils import InteractionGNNCell, HierarchicalGNNCell, HierarchicalGNNCe
 from utils import make_mlp, match_dims
 
 from time import time
-    
+from torch_geometric.data import Data
+
+class InteractionGNNBlock(nn.Module):
+
+    """
+    An interaction network for embedding class
+    """
+
+    def __init__(self, hparams, iterations):
+        super().__init__()
+            
+        """
+        Initialise the Lightning Module that can scan over different GNN training regimes
+        """                 
+        
+        # Setup input network
+        self.node_encoder = make_mlp(
+            hparams["spatial_channels"],
+            hparams["hidden"],
+            hparams["latent"],
+            hparams["nb_node_layer"],
+            output_activation=hparams["hidden_activation"],
+            hidden_activation=hparams["hidden_activation"],
+            layer_norm=hparams["layernorm"],
+        )
+
+        # The edge network computes new edge features from connected nodes
+        self.edge_encoder = make_mlp(
+            2 * (hparams["spatial_channels"]),
+            hparams["hidden"],
+            hparams["latent"],
+            hparams["nb_edge_layer"],
+            layer_norm=hparams["layernorm"],
+            output_activation=hparams["hidden_activation"],
+            hidden_activation=hparams["hidden_activation"],
+        )
+
+        # Initialize GNN blocks
+        if hparams["share_weight"]:
+            cell = InteractionGNNCell(hparams)
+            ignn_cells = [
+                cell
+                for _ in range(iterations)
+            ]
+        else:
+            ignn_cells = [
+                InteractionGNNCell(hparams)
+                for _ in range(iterations)
+            ]
+        
+        self.ignn_cells = nn.ModuleList(ignn_cells)
+        
+        # output layers
+        self.output_layer = make_mlp(
+            hparams["latent"],
+            hparams["hidden"],
+            hparams["emb_dim"],
+            hparams["output_layers"],
+            layer_norm=hparams["layernorm"],
+            output_activation= None,
+            hidden_activation=hparams["hidden_output_activation"],
+        )
+        
+        self.hparams = hparams
+        
+    def forward(self, x, graph):
+        
+        x.requires_grad = True
+        
+        nodes = checkpoint(self.node_encoder, x)
+        edges = checkpoint(self.edge_encoder, torch.cat([x[graph[0]], x[graph[1]]], dim=1))
+        
+        for layer in self.ignn_cells:
+            nodes, edges= layer(nodes, edges, graph)
+        
+        embeddings = self.output_layer(nodes)
+        embeddings = nn.functional.normalize(embeddings) 
+        
+        return embeddings, nodes, edges
     
 class HierarchicalGNNBlock(nn.Module):
 
@@ -38,7 +116,6 @@ class HierarchicalGNNBlock(nn.Module):
         self.super_dir = hparams["super_dir"]
         self.read_counter = 0
         self.write_counter = 0
-        self.load_dset = True
         self.create_dset = False
  
         self.supernode_encoder = make_mlp(
@@ -64,14 +141,14 @@ class HierarchicalGNNBlock(nn.Module):
 
         # Initialize GNN blocks
         if hparams["share_weight"]:
-            cell = HierarchicalGNNCell_super(hparams)
+            cell = HierarchicalGNNCell(hparams)
             hgnn_cells = [
                 cell
                 for _ in range(hparams["n_hierarchical_graph_iters"])
             ]
         else:
             hgnn_cells = [
-                HierarchicalGNNCell_super(hparams)
+                HierarchicalGNNCell(hparams)
                 for _ in range(hparams["n_hierarchical_graph_iters"])
             ]
         
@@ -174,7 +251,7 @@ class HierarchicalGNNBlock(nn.Module):
             
             return clusters
 
-    def preprocess_graphs(self, x, embeddings, nodes, edges, graph, pid):
+    def preprocess_graphs(self, x, embeddings, nodes, edges, graph, pid, batch):
         profiling = True
         
         x.requires_grad = True
@@ -222,13 +299,39 @@ class HierarchicalGNNBlock(nn.Module):
           data_write_time = time()
         
         # Save preprocessed graphs to data directory
-        data_dir = self.data_dir
+        super_dir = self.super_dir
         filename = str(self.write_counter)
-        filepath = data_dir + '/' + filename
-        data = {'nodes': nodes, 'edges': edges, 'graph': graph,
-                'supernodes': supernodes, 'superedges': superedges, 
-                'bipartite_graph': bipartite_graph, 'bipartite_edge_weights': bipartite_edge_weights,
-                'super_graph': super_graph, 'super_edge_weights': super_edge_weights, 'pid': pid}
+        filepath = super_dir + '/train/' + filename
+        print("Filepath = ", filepath)
+        super_dict = {'supernodes': supernodes, 'superedges': superedges, 
+                'super_graph': super_graph, 'super_edge_weights': super_edge_weights}
+
+        input_dict = {}
+        event_feats = ['x', 'cell_data', 'pid', 'hid', 'pt', 'edge_index', 'modulewise_true_edges', 'signal_true_edges','y', 'y_pid', 'layers', 'layerwise_true_edges']
+        for k, v in batch:
+          if (k in event_feats): #(k != 'batch') and (k != 'ptr'):
+            input_dict[k] = v
+          elif k == 'event_file':
+            input_dict[k] = v[0]
+        print("dict2 keys = ", input_dict.keys())
+        #print("Original batch = ", dict2)
+
+        data = {**super_dict, **input_dict}
+        for k, v in data.items():
+          if torch.is_tensor(v):
+            data[k] = v.clone().detach()
+            '''
+            if torch.is_complex(v) or torch.is_floating_point(v):
+              data[k] = torch.tensor(v.cpu().detach().clone().numpy(), requires_grad=True)
+            else:
+              data[k] = torch.tensor(v.cpu().detach().clone().numpy())
+            '''
+          else:
+            data[k] = v
+
+        #print("dict datatype = ", type(data))
+        data = Data(**data)
+        #print("New batch = ", dict2)
         torch.save(data, filepath) 
         # Save supernodes, edges, and graphs to separate directory
         #super_dir = self.super_dir
@@ -263,12 +366,12 @@ class HierarchicalGNNBlock(nn.Module):
           '''
         return supernodes, superedges, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights
     
-    def forward(self, x, embeddings, nodes, edges, graph, pid):
+    def forward(self, x, embeddings, nodes, edges, graph, pid, batch):
         
         x.requires_grad = True
         profiling = False
         if self.create_dset == True:
-          supernodes, superedges, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights = self.preprocess_graphs(x, embeddings, nodes, edges, graph, pid)
+          supernodes, superedges, bipartite_graph, bipartite_edge_weights, super_graph, super_edge_weights = self.preprocess_graphs(x, embeddings, nodes, edges, graph, pid, batch)
         else:
           clusters = self.clustering(x, embeddings, graph)
           means = scatter_mean(embeddings[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
@@ -278,66 +381,20 @@ class HierarchicalGNNBlock(nn.Module):
           supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
           supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
           superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
-          '''
-          print("generated supernodes = ", supernodes.shape)
-          print("generated superedges = ", superedges.shape)
-          print("generated nodes = ", nodes.shape)
-          print("generated edges = ", edges.shape)
-          print("generated bipartite graph = ", bipartite_graph.shape)
-          print("generated bipartite edge weights = ", bipartite_edge_weights.shape)
-          '''
         
-        if self.load_dset == True:
-          '''
-          self.read_counter = 0
-          while self.read_counter <= 300:
-            # data_dir = /data/FNAL/processed/
-            filepath = self.data_dir + '/' + str(self.read_counter)
-            #print('Filepath = ', filepath)
-            data = torch.load(filepath)
-            saved_nodes = data["nodes"]
-            saved_edges = data["edges"]
-            #print("loaded nodes = ", saved_nodes.shape)
-            #print("loaded edges = ", saved_edges.shape)
-            if (nodes.shape == saved_nodes.shape) and (edges.shape == saved_edges.shape):
-              nodes = data["nodes"]
-              edges = data["edges"]
-              #print("matched with file ", self.read_counter)
-              break
-            self.read_counter += 1
-          '''
-          #self.read_counter = 0
-          filepath = self.data_dir + '/' + str(self.read_counter % 20)
-          data = torch.load(filepath)
-          self.read_counter += 1
-          graph = data["graph"]
-          supernodes = data["supernodes"]
-          superedges = data["superedges"]
-          bipartite_graph = data["bipartite_graph"]
-          bipartite_edge_weights = data["bipartite_edge_weights"]
-          super_graph = data["super_graph"]
-          super_edge_weights = data["super_edge_weights"]
-          #pid = data["pid"]
-          
-          '''
-          print("saved supernodes = ", supernodes.shape)
-          print("saved superedges = ", superedges.shape)
-          print("saved nodes = ", nodes.shape)
-          print("saved edges = ", edges.shape)
-          print("saved bipartite graph = ", bipartite_graph.shape)
-          print("saved bipartite edge weights = ", bipartite_edge_weights.shape)
-          '''
         if profiling:
           layer_time = time()
 
         for layer in self.hgnn_cells:
-            supernodes, superedges = layer(supernodes,
-                                           superedges,
-                                           graph,
-                                           bipartite_graph,
-                                           bipartite_edge_weights,
-                                           super_graph,
-                                           super_edge_weights)
+            nodes, edges, supernodes, superedges = layer(nodes,
+                                                         edges,
+                                                         supernodes,
+                                                         superedges,
+                                                         graph,
+                                                         bipartite_graph,
+                                                         bipartite_edge_weights,
+                                                         super_graph,
+                                                         super_edge_weights)
         if profiling:
           layer_time = time() - layer_time
 
@@ -364,30 +421,9 @@ class gMRT(gMRTBase):
         if profiling:
           init_time = time()
 
-        # Setup input network
-        self.node_encoder = match_dims(
-            hparams["spatial_channels"],
-            hparams["latent"],
-            layer_norm=hparams["layernorm"],
-            output_activation=hparams["hidden_activation"],
-        )
+        self.data_dir = hparams["data_dir"]
 
-        # The edge network computes new edge features from connected nodes
-        self.edge_encoder = match_dims(
-            2 * (hparams["spatial_channels"]),
-            hparams["latent"],
-            layer_norm=hparams["layernorm"],
-            output_activation=hparams["hidden_activation"],
-        )
-
-        # output layers
-        self.output_layer = match_dims(
-            hparams["latent"],
-            hparams["emb_dim"],
-            layer_norm=hparams["layernorm"],
-            output_activation= None,
-        )
-        
+        self.ignn_block = InteractionGNNBlock(hparams, hparams["n_interaction_graph_iters"])
         self.hgnn_block = HierarchicalGNNBlock(hparams, self.log)
         
         self.bipartite_output_layer = make_mlp(
@@ -399,33 +435,47 @@ class gMRT(gMRTBase):
             output_activation= None,
             hidden_activation=hparams["hidden_output_activation"],
         )
+
+        self.read_counter = 0
         
         if profiling:
           self.init_time = time() - init_time
           #print("Initialization Time = ", self.init_time)
           self.pool_time = 0. 
         
-    def forward(self, x, graph, pid):
-        print('Graph PID = ', pid)
+    def forward(self, x, graph, pid, batch):
+        #print('Graph PID = ', pid)
+        #print('Batch batch shape = ', batch.batch, batch.batch.shape)
+        print('Batch = ', batch)
 
         if self.profiling:
           curr_pool_time = time()
         
         x.requires_grad = True
-        
-        directed_graph = torch.cat([graph, graph.flip(0)], dim = 1)
-        
-        nodes = checkpoint(self.node_encoder, x)
-        edges = checkpoint(self.edge_encoder, torch.cat([x[directed_graph[0]], x[directed_graph[1]]], dim=1))
-        '''
-        for i, layer in enumerate(self.node_encoder):
-          if hasattr(layer, 'bias') and layer.bias is not None:
-            print(f"Layer {i}: {layer.bias.data}")
-        '''
-        embeddings = self.output_layer(nodes)
-        embeddings = nn.functional.normalize(embeddings)
-        
-        nodes, supernodes, bipartite_graph, pid = self.hgnn_block(x, embeddings, nodes, edges, directed_graph, pid) 
+       
+        load_dset = True
+        if load_dset == False:
+          directed_graph = torch.cat([graph, graph.flip(0)], dim = 1)
+        else:
+          directed_graph = graph 
+        """
+        if load_dset == True: 
+          filepath = self.data_dir + '/' + str(self.read_counter % 20)
+          print("Filepath = ", filepath)
+          data = torch.load(filepath)
+          self.read_counter += 1
+          x = data["x"]
+          directed_graph = data["graph"]
+          nodes = data["supernodes"]
+          edges = data["superedges"]
+          graph = data["super_graph"]
+          pid = data["pid"]
+          edge_weights = data["super_edge_weights"]
+          self.read_counter += 1
+        """
+          
+        intermediate_embeddings, nodes, edges = self.ignn_block(x, directed_graph)
+        nodes, supernodes, bipartite_graph, pid = self.hgnn_block(x, intermediate_embeddings, nodes, edges, directed_graph, pid, batch) 
 
         bipartite_scores = torch.sigmoid(
             checkpoint(self.bipartite_output_layer, torch.cat([nodes[bipartite_graph[0]], supernodes[bipartite_graph[1]]], dim = 1))
@@ -440,4 +490,4 @@ class gMRT(gMRTBase):
           self.pool_time += curr_pool_time
           #print("Total Preprocessing (Initialization + Pooling) Time = ", self.init_time + self.pool_time)
 
-        return bipartite_graph, bipartite_scores, embeddings, pid
+        return bipartite_graph, bipartite_scores, intermediate_embeddings, pid

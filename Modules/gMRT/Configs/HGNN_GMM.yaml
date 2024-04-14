@@ -1,11 +1,12 @@
 # Input/output configuration
-input_dir: /data/FNAL/events
-data_dir: /data/FNAL/processed
-super_dir: /data/FNAL/supergraphs
+data_dir: /data/FNAL/events
+super_dir: /data/FNAL/processed
+#super_dir: /data/FNAL/supergraphs
 
 # Dataset parameters
 datatype_names: [train, val, test] # Which directory prefixes to use, assuming at least a train dataset 
 train_split: [300, 10, 10] # Number of [training, validation, testing] examples
+test_split: [5, 1, 1]
 
 # Definition of reconstructable particles
 ptcut: 1.0 

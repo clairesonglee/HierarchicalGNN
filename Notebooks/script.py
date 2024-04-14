@@ -32,7 +32,8 @@ def main():
 	#logger = WandbLogger(project="TrackML_1GeV")
 	logger = None
 	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
-	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH, limit_train_batches=20)
+	trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH)
+	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH, limit_train_batches=20)
 	trainer.fit(model)
 
 def resume():
