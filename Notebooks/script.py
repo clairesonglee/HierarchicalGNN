@@ -20,7 +20,7 @@ from pytorch_lightning.callbacks import GradientAccumulationScheduler
 checkpoint_callback = ModelCheckpoint(
     monitor='track_eff',
     mode="max",
-    save_top_k=2,
+    save_top_k=-1,
     save_last=True)
 
 def main():
@@ -29,10 +29,10 @@ def main():
 	model = model_selector(model_name)
 	kaiming_init(model)
 
-	#logger = WandbLogger(project="TrackML_1GeV")
-	logger = None
-	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
-	trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH)
+	logger = WandbLogger(project="TrackML_1GeV")
+	#logger = None
+	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
+	#trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH)
 	#trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH, limit_train_batches=20)
 	trainer.fit(model)
 
@@ -145,7 +145,7 @@ def test():
 	model.setup("test")
 	trainer = Trainer(gpus=1)
 	test_results = trainer.test(model, model.test_dataloader())[0]
-#'''
+'''
 main()
 print("Training new model")
 '''
@@ -155,4 +155,4 @@ save_ckpt = False
 state_dict = update(save_ckpt)
 switch(state_dict, save_ckpt)
 print("Resuming training on model")
-'''
+#'''

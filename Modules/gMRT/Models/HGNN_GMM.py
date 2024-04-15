@@ -446,7 +446,7 @@ class gMRT(gMRTBase):
     def forward(self, x, graph, pid, batch):
         #print('Graph PID = ', pid)
         #print('Batch batch shape = ', batch.batch, batch.batch.shape)
-        print('Batch = ', batch)
+        #print('Batch = ', batch)
 
         if self.profiling:
           curr_pool_time = time()

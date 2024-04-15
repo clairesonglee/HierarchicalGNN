@@ -131,7 +131,7 @@ class TrackMLSuperDataset(Dataset):
         if "1GeV" in str(self.dirs[key]):
             event = Data.from_dict(event.__dict__) # handle older PyG data format
         #print("event features = ", event.keys())
-        print("event supernodes = ", event.supernodes)
+        #print("event supernodes = ", event.supernodes)
         #print("key, self.dirs[key]  = ", key, self.dirs[key])
         
         # Load components to event object
@@ -146,7 +146,7 @@ class TrackMLSuperDataset(Dataset):
         event.super_edge_weights = None 
 
         #event_features = ['batch', 'cell_data', 'dir', 'edge_index', 'event_file', 'hid', 'inverse_mask', 'layers', 'layerwise_true_edges', 'modulewise_true_edges', 'nhits', 'pid', 'pt', 'ptr', 'scores', 'signal_mask', 'signal_true_edges', 'weights', 'x', 'y', 'y_pid']
-        print("event = ", event)
+        #print("event = ", event)
         '''
         for k, v in event.items():
           if torch.is_tensor(v):
@@ -193,7 +193,7 @@ class TrackMLSuperDataset(Dataset):
                 event.edge_index = event.edge_index[:, edge_mask]
                 event.y, event.y_pid = event.y[edge_mask], event.y_pid[edge_mask]
         
-        print("event.y ", event.y)
+        #print("event.y ", event.y)
         for i in ["y", "y_pid"]:
             graph_mask = mask[event.edge_index].all(0)
             event[i] = event[i][graph_mask]

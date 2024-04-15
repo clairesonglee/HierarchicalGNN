@@ -36,8 +36,10 @@ class gMRTBase(LightningModule):
     def setup(self, stage):
         if self.use_superdataset:
           paths = load_dataset_paths(self.hparams["super_dir"], self.hparams["datatype_names"])
-          paths = paths[:sum(self.hparams["test_split"])]
-          self.trainset, self.valset, self.testset = random_split(paths, self.hparams["test_split"], generator=torch.Generator().manual_seed(0))
+          paths = paths[:sum(self.hparams["train_split"])]
+          self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))
+          #paths = paths[:sum(self.hparams["test_split"])]
+          #self.trainset, self.valset, self.testset = random_split(paths, self.hparams["test_split"], generator=torch.Generator().manual_seed(0))
         else:
           paths = load_dataset_paths(self.hparams["data_dir"], self.hparams["datatype_names"])
           paths = paths[:sum(self.hparams["train_split"])]
