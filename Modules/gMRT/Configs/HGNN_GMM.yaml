@@ -60,7 +60,7 @@ warmup: 100
 lr: 0.001
 factor: 0.99
 patience: 1
-max_epochs: 70 #500
+max_epochs: 200 #500
 emb_epoch: 100
 
 # Hierarchical Structure Construction

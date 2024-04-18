@@ -14,7 +14,8 @@ from torch_scatter import scatter_min
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import min_weight_full_bipartite_matching
 from torch_geometric.data import Data
-
+import pandas as pd
+import csv
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -32,6 +33,11 @@ class gMRTBase(LightningModule):
         """
         self.save_hyperparameters(hparams)
         self.use_superdataset = True
+        #self.epoch_times = pd.DataFrame({'Epoch': [], 'Time': []})
+        self.fd = open('gmrt_epoch_times.csv','w') 
+        header = ['Epoch', 'Time']
+        self.writer = csv.DictWriter(self.fd, fieldnames = header)
+        self.writer.writeheader()
         
     def setup(self, stage):
         if self.use_superdataset:
@@ -81,6 +87,10 @@ class gMRTBase(LightningModule):
     def on_train_epoch_end(self):
         self.epoch_time = time() - self.epoch_time
         self.log("epoch_time", self.epoch_time)
+        epoch_data = {'Epoch':str(self.trainer.current_epoch), 'Time':str(self.epoch_time)}
+        self.writer.writerow(epoch_data)
+        #print("epoch data = ", epoch_data)
+        #self.epoch_times = self.epoch_times.append(epoch_data, ignore_index=True)
 
         pooling_time = self.hgnn_block.epoch_pooling_time 
         graph_construct_time = self.hgnn_block.epoch_graph_construct_time 
@@ -88,7 +98,11 @@ class gMRTBase(LightningModule):
         self.log("graph_construct_time", graph_construct_time)
         self.hgnn_block.epoch_pooling_time = 0.
         self.hgnn_block.epoch_graph_construct_time = 0.
-
+    '''
+    def on_train_epoch_end(self):
+        print(self.epoch_times)
+        (self.epoch_times).to_csv('gmrt_epoch_times.csv', index=False)
+    '''
     def configure_optimizers(self):
         optimizer = [
             torch.optim.AdamW(

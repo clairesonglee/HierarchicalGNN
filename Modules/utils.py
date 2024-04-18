@@ -54,7 +54,7 @@ class TrackMLDataset(Dataset):
         event = torch.load(self.dirs[key], map_location=torch.device(self.device))
         if "1GeV" in str(self.dirs[key]):
             event = Data.from_dict(event.__dict__) # handle older PyG data format
-        print("event = ", event)
+        #print("event = ", event)
         #print("key, self.dirs[key]  = ", key, self.dirs[key])
     
         # the MASK tensor filter out hits from event

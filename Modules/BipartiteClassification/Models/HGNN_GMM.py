@@ -151,7 +151,7 @@ class HierarchicalGNNBlock(nn.Module):
         pool_time = time()
         self.GMM_model = GaussianMixture(n_components = 2)
         pool_time = time() - pool_time
-        print("Pooling Layer Time = ", pool_time)
+        #print("Pooling Layer Time = ", pool_time)
         self.super_graph_construction = DynamicGraphConstruction("sigmoid", hparams)
         self.bipartite_graph_construction = DynamicGraphConstruction("exp", hparams)
         self.register_buffer("score_cut", torch.tensor([float("inf")]))
@@ -277,14 +277,14 @@ class HierarchicalGNNBlock(nn.Module):
             
         
         layer_time = time() - layer_time
-
+        '''
         print("Hierarchical GNN Timing Breakdown")
         print("Cluster Time =             ", cluster_time)
         print("Compute Time =             ", center_time)
         print("Construct Time =           ", construct_time)
         print("Node Initialization Time = ", init_time)
         print("Layer Construction Time =  ", layer_time)
-	
+	'''
         return nodes, supernodes, bipartite_graph
     
 class BC_HierarchicalGNN_GMM(BipartiteClassificationBase):

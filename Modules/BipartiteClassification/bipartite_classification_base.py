@@ -14,7 +14,7 @@ from torch_scatter import scatter_min
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import min_weight_full_bipartite_matching
 from torch_geometric.data import Data
-
+import csv
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -30,6 +30,10 @@ class BipartiteClassificationBase(LightningModule):
         Initialise the Lightning Module
         """
         self.save_hyperparameters(hparams)
+        self.fd = open('baseline_epoch_times.csv','w')
+        header = ['Epoch', 'Time']
+        self.writer = csv.DictWriter(self.fd, fieldnames = header)
+        self.writer.writeheader()
         
     def setup(self, stage):
         paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
@@ -64,6 +68,8 @@ class BipartiteClassificationBase(LightningModule):
         self.epoch_time = time() - self.epoch_time
         self.log("epoch_time", self.epoch_time)
         print("Epoch time = ", self.epoch_time)
+        epoch_data = {'Epoch':str(self.trainer.current_epoch), 'Time':str(self.epoch_time)}
+        self.writer.writerow(epoch_data)
 
     def configure_optimizers(self):
         optimizer = [
