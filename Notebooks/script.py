@@ -25,12 +25,12 @@ checkpoint_callback = ModelCheckpoint(
 
 def main():
 	#model_name = input("input model ID/name")
-	model_name = "5"
+	model_name = "1"
 	model = model_selector(model_name)
 	kaiming_init(model)
 
-	logger = WandbLogger(project="TrackML_1GeV")
-	#logger = None
+	#logger = WandbLogger(project="TrackML_1GeV")
+	logger = None
 	trainer = Trainer(gpus=1, max_epochs=model.hparams["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
 	#trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH)
 	#trainer = Trainer(gpus=1, max_epochs=3, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 15, default_root_dir=ROOT_PATH, limit_train_batches=5)
@@ -55,11 +55,12 @@ def update(save_ckpt):
 	# Load input and setup logger
 	training_id = "TrackML_1GeV/3oopr2xe"
 	#logger = WandbLogger(project="TrackML_1GeV")
-	#logger = None
+	logger = None
 
 	# Load checkpoint from Hierarchical Pooling NN
-	model_path = "{}{}/checkpoints/epoch=39-step=12000.ckpt".format(ROOT_PATH, training_id)
 	#model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
+	#model_path = "{}{}/checkpoints/epoch=49-step=15000.ckpt".format(ROOT_PATH, training_id)
+	model_path = "{}{}/checkpoints/epoch=47-step=14400.ckpt".format(ROOT_PATH, training_id)
 	ckpt = torch.load(model_path)
 
 	# Initialize model and parameters
@@ -98,11 +99,13 @@ def switch(state_dict, save_ckpt):
 	# Load input and setup logger
 	training_id = "TrackML_1GeV/3oopr2xe"
 	logger = WandbLogger(project="TrackML_1GeV")
+	#logger = None 
 	if save_ckpt:
 	  model_path = "{}{}/checkpoints/updated.ckpt".format(ROOT_PATH, training_id)
 	else:
 	  #model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
-	  model_path = "{}{}/checkpoints/epoch=39-step=12000.ckpt".format(ROOT_PATH, training_id)
+	  #model_path = "{}{}/checkpoints/epoch=49-step=15000.ckpt".format(ROOT_PATH, training_id)
+	  model_path = "{}{}/checkpoints/epoch=47-step=14400.ckpt".format(ROOT_PATH, training_id)
 	ckpt = torch.load(model_path)
 
 	# Initialize model and parameters
@@ -115,7 +118,8 @@ def switch(state_dict, save_ckpt):
 	  #optimizer.load_state_dict(chkpt['optimizer_state_dict'])
 	  #loss = chkpt['loss']
 	#accumulator = GradientAccumulationScheduler(scheduling={0: 1, 4: 2, 8: 4})
-	trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
+	trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
+	#trainer = Trainer(gpus=1, max_epochs=ckpt["hyper_parameters"]["max_epochs"], gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 300, default_root_dir=ROOT_PATH)
 	if save_ckpt:
 	  trainer.fit(model, ckpt_path=model_path)
 	else:

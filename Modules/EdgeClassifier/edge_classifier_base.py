@@ -18,7 +18,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 sys.path.append("../..")
 
 # Local imports
-from utils import load_dataset_paths, TrackMLDataset
+from utils import load_dataset_paths, TrackMLDataset, TrackMLSuperDataset
 from tracking_utils import eval_metrics
 
 class EdgeClassifierBase(LightningModule):
@@ -28,33 +28,49 @@ class EdgeClassifierBase(LightningModule):
         Initialise the Lightning Module that can scan over different filter training regimes
         """
         self.save_hyperparameters(hparams)
+        self.use_superdataset = True
+        self.num_workers = 16
         
     def setup(self, stage):
-        
-        paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
+        if self.use_superdataset: 
+          paths = load_dataset_paths(self.hparams["super_dir"], self.hparams["datatype_names"])
+        else:
+          paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
         paths = paths[:sum(self.hparams["train_split"])]
         self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))
         
     def train_dataloader(self):
-        self.trainset = TrackMLDataset(self.trainset, self.hparams, stage = "train", device = "cpu")
+        if self.use_superdataset:
+          self.trainset = TrackMLSuperDataset(self.trainset, self.hparams, stage = "train", device = "cpu")
+        else:
+          self.trainset = TrackMLDataset(self.trainset, self.hparams, stage = "train", device = "cpu")
         if self.trainset is not None:
-            return DataLoader(self.trainset, batch_size=1, num_workers=16, shuffle = True)
+            return DataLoader(self.trainset, batch_size=1, num_workers=self.num_workers, shuffle = True)
         else:
             return None
 
     def val_dataloader(self):
-        self.valset = TrackMLDataset(self.valset, self.hparams, stage = "val", device = "cpu")
+        if self.use_superdataset:
+          self.valset = TrackMLSuperDataset(self.valset, self.hparams, stage = "val", device = "cpu")
+        else:
+          self.valset = TrackMLDataset(self.valset, self.hparams, stage = "val", device = "cpu")
         if self.valset is not None:
-            return DataLoader(self.valset, batch_size=1, num_workers=16)
+            return DataLoader(self.valset, batch_size=1, num_workers=self.num_workers)
         else:
             return None
 
     def test_dataloader(self):
-        self.testset = TrackMLDataset(self.testset, self.hparams, stage = "test", device = "cpu")
+        if self.use_superdataset:
+          self.testset = TrackMLSuperDataset(self.testset, self.hparams, stage = "test", device = "cpu")
+        else:
+          self.testset = TrackMLDataset(self.testset, self.hparams, stage = "test", device = "cpu")
         if self.testset is not None:
-            return DataLoader(self.testset, batch_size=1, num_workers=16)
+            return DataLoader(self.testset, batch_size=1, num_workers=self.num_workers)
         else:
             return None
+
+
+
 
     def configure_optimizers(self):
         optimizer = [
