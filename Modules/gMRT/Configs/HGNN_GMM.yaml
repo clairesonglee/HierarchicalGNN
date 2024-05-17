@@ -65,9 +65,9 @@ emb_epoch: 100
 
 # Hierarchical Structure Construction
 bipartitegraph_sparsity: 5
-supergraph_sparsity: 10
+supergraph_sparsity: 5 #10
 min_cluster_size: 3
-cluster_granularity: 5
+cluster_granularity: 3 #5
 
 # Track evaluation
 majority_cut: 0.5

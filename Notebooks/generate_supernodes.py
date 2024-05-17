@@ -22,7 +22,58 @@ from torch_geometric.data import Data
 sys.path.append("..")
 #from Modules.gMRT.Models.HGNN_GMM import InteractionGNNBlock, HierarchicalGNNBlock
 #from Modules.utils import TrackMLDataset
+from Modules.utils import make_mlp
 
+
+class DynamicGraphConstruction(nn.Module):
+    def __init__(self, weighting_function, hparams):
+        """
+        weighting function is used to turn dot products into weights
+        """
+        super().__init__()
+        
+        self.hparams = hparams
+        self.weight_normalization = nn.BatchNorm1d(1)  
+        self.weighting_function = getattr(torch, weighting_function)
+        self.register_buffer("knn_radius", torch.ones(1), persistent=True)
+        
+    def forward(self, src_embeddings, dst_embeddings, sym = False, norm = False, k = 10, logits = False):
+        """
+        src embeddings: source nodes' embeddings
+        dst embeddings: destination nodes' embeddings
+        sym: whether to symmetrize the graph or not
+        norm: whether to normalize the sum of weights around each not to 1 or not; empirically using True gives better convergence
+        k: the source degree of the output graph
+        logits: whether to output logits (dot products) or not
+        """
+        # Construct the Graph
+        with torch.no_grad():            
+            graph_idxs = find_neighbors(src_embeddings, dst_embeddings, r_max=self.knn_radius, k_max=k)
+            positive_idxs = (graph_idxs >= 0)
+            ind = torch.arange(graph_idxs.shape[0], device = src_embeddings.device).unsqueeze(1).expand(graph_idxs.shape)
+            if sym:
+                src, dst = symmetrize(cudf.Series(ind[positive_idxs]), cudf.Series(graph_idxs[positive_idxs]))
+                graph = torch.tensor(cp.vstack([src.to_cupy(), dst.to_cupy()]), device=src_embeddings.device).long()
+            else:
+                src, dst = ind[positive_idxs], graph_idxs[positive_idxs]
+                graph = torch.stack([src, dst], dim = 0)
+            if self.training:
+                maximum_dist = (src_embeddings[graph[0]] - dst_embeddings[graph[1]]).square().sum(-1).sqrt().max()
+                self.knn_radius = 0.9*self.knn_radius + 0.11*maximum_dist # Keep track of the minimum radius needed to give right number of neighbors
+        
+        # Compute bipartite attention
+        likelihood = torch.einsum('ij,ij->i', src_embeddings[graph[0]], dst_embeddings[graph[1]]) 
+        edge_weights_logits = self.weight_normalization(likelihood.unsqueeze(1)).squeeze() # regularize to ensure variance of weights
+        edge_weights = self.weighting_function(edge_weights_logits)
+        
+        if norm:
+            edge_weights = edge_weights/edge_weights.mean()
+        edge_weights = edge_weights.unsqueeze(1)
+        if logits:
+            return graph, edge_weights, edge_weights_logits
+
+        return graph, edge_weights
+    
 
 def determine_cut(self, cut0):
   """
@@ -30,7 +81,7 @@ def determine_cut(self, cut0):
   than the log-likelihood to belong to the left. Note that the solution might not exist.
   """
   sigmoid = lambda x: 1/(1+np.exp(-x))
-  amples=unc = lambda x: sigmoid(self.hparams["cluster_granularity"])*self.GMM_model.predict_proba(x.reshape((-1, 1)))[:, self.GMM_model.means_.argmin()] - sigmoid(-self.hparams["cluster_granularity"])*self.GMM_model.predict_proba(x.reshape((-1, 1)))[:, self.GMM_model.means_.argmax()]
+  func = lambda x: sigmoid(self.hparams["cluster_granularity"])*self.GMM_model.predict_proba(x.reshape((-1, 1)))[:, self.GMM_model.means_.argmin()] - sigmoid(-self.hparams["cluster_granularity"])*self.GMM_model.predict_proba(x.reshape((-1, 1)))[:, self.GMM_model.means_.argmax()]
   cut = fsolve(func, cut0)
   return cut.item()
 
@@ -45,16 +96,17 @@ def get_cluster_labels(self, connected_components, x):
         
   return clusters
 
-def clustering():
+def clustering(x, graph):
 
   with torch.no_grad():
+    GMM_model = GaussianMixture(n_components = 2)
     
     # Compute cosine similarity transformed by archypertangent
-    likelihood = torch.einsum('ij,ij->i', embeddings[graph[0]], embeddings[graph[1]])
+    likelihood = torch.einsum('ij,ij->i', graph[0], graph[1])
     likelihood = torch.atanh(torch.clamp(likelihood, min=-1+1e-7, max=1-1e-7))
     
     # GMM edge cutting
-    self.GMM_model.fit(likelihood.unsqueeze(1).cpu().numpy())
+    GMM_model.fit(likelihood.unsqueeze(1).cpu().numpy())
     
     # in the case of score cut not initialized, initialize it from the middle point of the two distribution
     if self.score_cut == float("inf"): 
@@ -110,16 +162,7 @@ def create_dataset():
     x, directed_graph = event.x, event.edge_index
     print("x dim = ", x.size(), "graph dim = ", graph.size())
 
-def create_coarse_data():
-  # Set filepaths and initialize variables 
-  input_path = "/data/FNAL/events/train/*"
-  output_path = "/data/FNAL/coarse_events/train/"
-  #input_path = "/data/FNAL/events/test/*"
-  #output_path = "/data/FNAL/coarse_events/test/"
-  input_path = "/data/FNAL/events/val/*"
-  output_path = "/data/FNAL/coarse_events/val/"
-  config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
-  event_dir = glob(input_path)
+def create_coarse_data(output_path, event_dir):
   filename = 0
   total_cluster_time = 0
 
@@ -248,8 +291,78 @@ def save_data(data, output_path, filename):
     filename += 1
     return filename
 
+def create_super_data(input_path, super_path, hparams):
+  super_graph_construction = DynamicGraphConstruction("sigmoid", hparams)
+  bipartite_graph_construction = DynamicGraphConstruction("exp", hparams)
+  supernode_encoder = make_mlp(
+            hparams["latent"],
+            hparams["hidden"],
+            hparams["latent"] - hparams["emb_dim"],
+            hparams["nb_node_layer"],
+            output_activation=hparams["hidden_activation"],
+            hidden_activation=hparams["hidden_activation"],
+            layer_norm=hparams["layernorm"],
+        )
+  self.superedge_encoder = make_mlp(
+            2 * hparams["latent"],
+            hparams["hidden"],
+            hparams["latent"],
+            hparams["nb_edge_layer"],
+            layer_norm=hparams["layernorm"],
+            output_activation=hparams["hidden_activation"],
+            hidden_activation=hparams["hidden_activation"],
+        )
+
+  for event_path in event_dir:
+    clusters = clustering(x, graph)
+
+    # Compute Centers
+    means = scatter_mean(embeddings[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
+    means = nn.functional.normalize(means)
+        
+    # Construct Graphs
+    super_graph, super_edge_weights = super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
+    bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = hparams["bipartitegraph_sparsity"], logits = True)
+        
+    # Initialize supernode & edges by aggregating node features. Normalizing with 1-norm to improve training stability
+    supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
+    supernodes = torch.cat([means, checkpoint(supernode_encoder, supernodes)], dim = -1)
+    superedges = checkpoint(superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
+    print("supernode dim = ", supernodes.size(), "superedge dim = ", superedges.size())
+
+
+def visualize_data(input_path, super_path):
+  event_dir = glob(input_path)
+  super_event_dir = glob(super_path)
+  for i, event_path in enumerate(event_dir):
+    # Load event node and graph data 
+    event = torch.load(event_path)
+    super_event = torch.load(super_event_dir[i])
+    x, y, graph = event.x, event.y, event.edge_index
+    super_x, super_graph = super_event.x, super_event.edge_index
+    supernodes, superedges = super_event.supernodes, super_event.superedges
+    print("supernode dim = ", supernodes.size(), "superedge dim = ", superedges.size())
+    print("x dim = ", x.size(), "y dim = ", y.size(), "graph dim = ", graph.size())
+    print("y distribution = ", y)
+
+
 def main():
-  data = create_coarse_data()
+  # Set filepaths and initialize variables 
+  input_path = "/data/FNAL/events/train/*"
+  super_path = "/data/FNAL/processed/train/*"
+  output_path = "/data/FNAL/coarse_events/train/"
+  #input_path = "/data/FNAL/events/test/*"
+  #output_path = "/data/FNAL/coarse_events/test/"
+  #input_path = "/data/FNAL/events/val/*"
+  #output_path = "/data/FNAL/coarse_events/val/"
+
+  #event_dir = glob(input_path)
+  #data = create_coarse_data(output_path, event_dir)
+
+  config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
+  with open(config_path) as f:
+    hparams = yaml.load(f, Loader=yaml.FullLoader)
+    data = create_super_data(input_path, super_path, **hparams)
 
 main()
 

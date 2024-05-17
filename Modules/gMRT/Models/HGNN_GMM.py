@@ -21,6 +21,7 @@ from utils import make_mlp, match_dims
 
 from time import time
 from torch_geometric.data import Data
+import csv
 
 class InteractionGNNBlock(nn.Module):
 
@@ -116,7 +117,7 @@ class HierarchicalGNNBlock(nn.Module):
         self.super_dir = hparams["super_dir"]
         self.read_counter = 0
         self.write_counter = 0
-        self.create_dset = False
+        self.create_dset = True #False
  
         self.supernode_encoder = make_mlp(
             hparams["latent"],
@@ -177,7 +178,12 @@ class HierarchicalGNNBlock(nn.Module):
         self.epoch_graph_construct_time = 0.
   
         # Set profiling flag
-        self.profiling = True
+        self.profiling = False #True
+        if self.profiling:
+          self.fd = open('training_supergraph_dims.csv','w')
+          header = ['Mean', 'Node', 'Edge', 'Supernode', 'Superedge']
+          self.writer = csv.DictWriter(self.fd, fieldnames = header)
+          self.writer.writeheader()
     
     def determine_cut(self, cut0):
         """
@@ -197,12 +203,10 @@ class HierarchicalGNNBlock(nn.Module):
         _, inverse, counts = labels.unique(return_inverse = True, return_counts = True)
         mask = counts[inverse] >= self.hparams["min_cluster_size"]
         clusters[vertex[mask]] = labels[mask].unique(return_inverse = True)[1].long()
-        
         return clusters
             
       
     def clustering(self, x, embeddings, graph):
-        #print('Embedding = ', embeddings)
         if self.profiling:
           cluster_time = time()
         with torch.no_grad():
@@ -245,6 +249,7 @@ class HierarchicalGNNBlock(nn.Module):
               conn_comp_time = time()
             # Connected Components
             mask = likelihood >= self.score_cut.to(likelihood.device)
+            print("mask dim = ", len(mask))
             try:
                 G = cugraph.Graph()
                 df = cudf.DataFrame({"src": cp.asarray(graph[0, mask]),
@@ -264,7 +269,7 @@ class HierarchicalGNNBlock(nn.Module):
                 G.from_cudf_edgelist(df, source = "src", destination = "dst")
                 connected_components = cugraph.components.connected_components(G)
                 clusters = self.get_cluster_labels(connected_components, x)
-            
+
             if self.profiling:
               conn_comp_time = time() - conn_comp_time 
               cluster_time = time() - cluster_time
@@ -274,6 +279,44 @@ class HierarchicalGNNBlock(nn.Module):
               print("Connected Component Time        = ",(conn_comp_time/cluster_time)*100,"%")
               print("Total Cluster Time              = ", cluster_time)
             return clusters
+
+    def save_supergraph_data(self, x, graph, super_graph, supernodes, superedges, batch):
+        # Save preprocessed graphs to data directory
+        super_dir = self.super_dir
+        filename = str(self.write_counter)
+        filepath = super_dir + '/train/' + filename
+        print("Filepath = ", filepath)
+
+        # Save newly generated super graph & corresponding data to file
+        input_dict = {}
+        event_x_feats = ['x', 'cell_data', 'pid', 'hid', 'pt', \
+                         'modulewise_true_edges', 'signal_true_edges']
+        event_y_feats = ['y', 'y_pid']
+        #super_dict = {'edge_index': super_graph} # edge_index = directed_graph
+        super_dict = {'super_graph': super_graph, 'supernodes': supernodes, 'superedges': superedges} 
+
+        for k, v in batch:
+          if (k in event_x_feats): # matches x dim
+            input_dict[k] = v
+          elif k == 'event_file': # exception for event name string
+            input_dict[k] = v[0]
+          elif (k in event_y_feats): # matches y dim 
+            input_dict[k] = v[super_graph[0]]
+
+        # Combine new data & processed old data 
+        data = {**super_dict, **input_dict}
+        for k, v in data.items():
+          if torch.is_tensor(v):
+            data[k] = v.clone().detach()
+          else:
+            data[k] = v
+
+        # Save data to new input directory
+        data = Data(**data)
+        torch.save(data, filepath)
+        self.write_counter += 1
+
+        return
 
     def preprocess_graphs(self, x, embeddings, nodes, edges, graph, pid, batch):
         
@@ -297,7 +340,10 @@ class HierarchicalGNNBlock(nn.Module):
         # Construct Graphs
         if self.profiling:
           construct_time = time()
-        super_graph, super_edge_weights = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
+        print("graph size = ", graph.size())
+        #super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
+        super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = 4)
+        print("supergraph size = ", super_graph.size())
         bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
         if self.profiling:
           construct_time = time() - construct_time
@@ -316,32 +362,8 @@ class HierarchicalGNNBlock(nn.Module):
           data_write_time = time()
         
         # Save preprocessed graphs to data directory
-        super_dir = self.super_dir
-        filename = str(self.write_counter)
-        filepath = super_dir + '/train/' + filename
-        print("Filepath = ", filepath)
-        super_dict = {'supernodes': supernodes, 'superedges': superedges, 
-                'super_graph': super_graph, 'super_edge_weights': super_edge_weights}
+        self.save_supergraph_data(x, graph, super_graph, supernodes, superedges, batch)
 
-        input_dict = {}
-        event_feats = ['x', 'cell_data', 'pid', 'hid', 'pt', 'edge_index', 'modulewise_true_edges', 'signal_true_edges','y', 'y_pid', 'layers', 'layerwise_true_edges']
-        for k, v in batch:
-          if (k in event_feats): #(k != 'batch') and (k != 'ptr'):
-            input_dict[k] = v
-          elif k == 'event_file':
-            input_dict[k] = v[0]
-
-        data = {**super_dict, **input_dict}
-        for k, v in data.items():
-          if torch.is_tensor(v):
-            data[k] = v.clone().detach()
-          else:
-            data[k] = v
-
-        data = Data(**data)
-        torch.save(data, filepath) 
-        self.write_counter += 1
-        
         if self.profiling:
           data_write_time = time() - data_write_time
 
@@ -382,20 +404,23 @@ class HierarchicalGNNBlock(nn.Module):
           if self.profiling:
             center_time = time() - center_time
             construct_time = time()
-          super_graph, super_edge_weights = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
+          super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
           bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
           if self.profiling:
             construct_time = time() - construct_time
             graph_init_time = time()
           supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
           supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
+          print("supernode dim = ", supernodes.size())
+          #print("supernode = ", supernodes)
+          print("node dim = ", nodes.size())
+          print("x dim = ", x.size())
+          print("x = ", x)
+          print("means dim = ", means.size())
+          #print("means = ", means)
           superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
           if self.profiling:
             graph_init_time = time() - graph_init_time
-            print('Means dim = ', means.size())
-            print('Nodes dim = ', nodes.size())
-            print('Edges dim = ', edges.size())
-            #print('Supergraph dim = ', super_graph.size)
         
         if self.profiling:
           layer_time = time()
@@ -446,7 +471,7 @@ class gMRT(gMRTBase):
     def __init__(self, hparams):
         super().__init__(hparams) 
 
-        self.profiling = True
+        self.profiling = False #True
         if self.profiling:
           init_time = time()
 
@@ -487,6 +512,7 @@ class gMRT(gMRTBase):
         if self.profiling:
           i_time = time() 
         intermediate_embeddings, nodes, edges = self.ignn_block(x, directed_graph)
+        print("node emb dim = ", nodes.size())
         if self.profiling:
           i_time = time() - i_time
 

@@ -1,5 +1,6 @@
 # Input/output configuration
 input_dir: /data/FNAL/events
+super_dir: /data/FNAL/coarse_events
 
 # Dataset parameters
 datatype_names: [train, val, test] # Which directory prefixes to use, assuming at least a train dataset 

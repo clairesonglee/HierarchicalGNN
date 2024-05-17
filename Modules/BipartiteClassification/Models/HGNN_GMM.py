@@ -19,6 +19,7 @@ from gnn_utils import InteractionGNNCell, HierarchicalGNNCell, DynamicGraphConst
 from utils import make_mlp
 
 from time import time
+import csv
     
 class InteractionGNNBlock(nn.Module):
 
@@ -174,6 +175,11 @@ class HierarchicalGNNBlock(nn.Module):
    
         # Set profiling flag
         self.profiling = True
+        if self.profiling:
+          self.fd = open('training_graph_dims.csv','w')
+          header = ['Mean', 'Node', 'Edge', 'Supernode', 'Superedge']
+          self.writer = csv.DictWriter(self.fd, fieldnames = header)
+          self.writer.writeheader()
     
     def determine_cut(self, cut0):
         """
@@ -310,9 +316,13 @@ class HierarchicalGNNBlock(nn.Module):
         superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
         if self.profiling:
           graph_init_time = time() - graph_init_time
-          print('Means dim = ', means.size())
-          print('Nodes dim = ', nodes.size())
-          print('Edges dim = ', edges.size())
+          graph_data = {'Mean':str((means.size())[0]), 'Node':str((nodes.size())[0]), 'Edge':str((edges.size())[0]), \
+                        'Supernode':str((supernodes.size())[0]), 'Superedge':str((superedges.size())[0])}
+          self.writer.writerow(graph_data)
+          #print('Mean y = ',(means.size())[1], 'Node y = ', (nodes.size())[1], 'Edge y = ', (edges.size())[1])
+          #print('Means dim = ', means.size())
+          #print('Nodes dim = ', nodes.size())
+          #print('Edges dim = ', edges.size())
 
         if self.profiling:
           layer_time = time()

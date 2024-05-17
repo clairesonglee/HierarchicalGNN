@@ -28,7 +28,7 @@ class EdgeClassifierBase(LightningModule):
         Initialise the Lightning Module that can scan over different filter training regimes
         """
         self.save_hyperparameters(hparams)
-        self.use_superdataset = True
+        self.use_superdataset = False #True
         self.num_workers = 16
         
     def setup(self, stage):
