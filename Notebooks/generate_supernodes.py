@@ -165,6 +165,7 @@ def create_dataset():
 def create_coarse_data(output_path, event_dir):
   filename = 0
   total_cluster_time = 0
+  y_distrib = []
 
   for event_path in event_dir:
     # Load event node and graph data 
@@ -260,6 +261,12 @@ def create_coarse_data(output_path, event_dir):
                    'cell_data': cell_data, 'pid': pid, 'hid': hid, 'pt': pt, \
                    'modulewise_true_edges': modwise_edges, 'signal_true_edges': signal_edges} 
                    # edge_index = directed_graph
+    #print("y distribution = ", y.unique(return_counts=True))
+    print("y pid distribution = ", y_pid.unique(return_counts=True))
+    print("y distribution = ", y.unique(return_counts=True))
+    _, counts = y.unique(return_counts=True)
+    ratio = counts[0]/counts[1]
+    y_distrib.append(ratio)
     '''
     input_dict = {}
     for feature in event_x_feats:
@@ -270,7 +277,8 @@ def create_coarse_data(output_path, event_dir):
     data = {**coarse_dict, **input_dict}
     filename = save_data(data, output_path, filename)
     '''
-    filename = save_data(coarse_dict, output_path, filename)
+    #filename = save_data(coarse_dict, output_path, filename)
+  print("y distribution array = ", y_distrib)  
 
   # Profile cluster time
   print("Total cluster time = ", total_cluster_time)
@@ -334,36 +342,43 @@ def create_super_data(input_path, super_path, hparams):
 def visualize_data(input_path, super_path):
   event_dir = glob(input_path)
   super_event_dir = glob(super_path)
+  y_distrib = []
   for i, event_path in enumerate(event_dir):
     # Load event node and graph data 
     event = torch.load(event_path)
-    super_event = torch.load(super_event_dir[i])
+    #super_event = torch.load(super_event_dir[i])
     x, y, graph = event.x, event.y, event.edge_index
-    super_x, super_graph = super_event.x, super_event.edge_index
-    supernodes, superedges = super_event.supernodes, super_event.superedges
-    print("supernode dim = ", supernodes.size(), "superedge dim = ", superedges.size())
+    #super_x, super_graph = super_event.x, super_event.edge_index
+    #supernodes, superedges = super_event.supernodes, super_event.superedges
+    #print("supernode dim = ", supernodes.size(), "superedge dim = ", superedges.size())
     print("x dim = ", x.size(), "y dim = ", y.size(), "graph dim = ", graph.size())
-    print("y distribution = ", y)
-
+    #print("y distribution = ", y.unique(return_counts=True))
+    print("y pid distribution = ", list(set(event.y_pid)))
+    _, counts = y.unique(return_counts=True)
+    ratio = counts[0]/counts[1]
+    y_distrib.append(ratio)
+  print("y distribution array = ", y_distrib)
 
 def main():
   # Set filepaths and initialize variables 
-  input_path = "/data/FNAL/events/train/*"
-  super_path = "/data/FNAL/processed/train/*"
-  output_path = "/data/FNAL/coarse_events/train/"
-  #input_path = "/data/FNAL/events/test/*"
-  #output_path = "/data/FNAL/coarse_events/test/"
+  #input_path = "/data/FNAL/events/train/*"
+  #super_path = "/data/FNAL/processed/train/*"
+  #output_path = "/data/FNAL/coarse_events/train/"
+  input_path = "/data/FNAL/events/test/*"
+  super_path = "/data/FNAL/processed/test/*"
+  output_path = "/data/FNAL/coarse_events/test/"
   #input_path = "/data/FNAL/events/val/*"
   #output_path = "/data/FNAL/coarse_events/val/"
 
-  #event_dir = glob(input_path)
-  #data = create_coarse_data(output_path, event_dir)
-
+  event_dir = glob(input_path)
+  data = create_coarse_data(output_path, event_dir)
+  '''
   config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
   with open(config_path) as f:
     hparams = yaml.load(f, Loader=yaml.FullLoader)
     data = create_super_data(input_path, super_path, **hparams)
-
+  '''
+  visualize_data(input_path, super_path)
 main()
 
 
