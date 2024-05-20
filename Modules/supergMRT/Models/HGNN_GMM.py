@@ -23,6 +23,8 @@ from time import time
 from torch_geometric.data import Data
 import csv
 
+np.set_printoptions(threshold=sys.maxsize)
+
 class InteractionGNNBlock(nn.Module):
 
     """
@@ -140,6 +142,11 @@ class HierarchicalGNNBlock(nn.Module):
             hidden_activation=hparams["hidden_activation"],
         )
 
+        self.output_encoder = match_dims(
+            hparams["latent"],
+            hparams["output_layers"],
+        )
+
         # Initialize GNN blocks
         if hparams["share_weight"]:
             cell = HierarchicalGNNCell(hparams)
@@ -205,6 +212,7 @@ class HierarchicalGNNBlock(nn.Module):
         clusters[vertex[mask]] = labels[mask].unique(return_inverse = True)[1].long()
         return clusters
             
+      
     def clustering(self, x, embeddings, graph):
         if self.profiling:
           cluster_time = time()
@@ -278,8 +286,8 @@ class HierarchicalGNNBlock(nn.Module):
               print("Connected Component Time        = ",(conn_comp_time/cluster_time)*100,"%")
               print("Total Cluster Time              = ", cluster_time)
             return clusters
-      
-    def clustering2(self, x, graph):
+
+    def clustering_input(self, x, graph):
         if self.profiling:
           cluster_time = time()
         with torch.no_grad():
@@ -353,37 +361,68 @@ class HierarchicalGNNBlock(nn.Module):
               print("Total Cluster Time              = ", cluster_time)
             return clusters
 
-    def save_supergraph_data(self, super_graph, batch, clusters, means):
+    def save_supergraph_data(self, graph, super_graph, clusters, means, batch):
         # Save preprocessed graphs to data directory
         super_dir = self.super_dir
         filename = str(self.write_counter)
         filepath = super_dir + '/train/' + filename
         print("Filepath = ", filepath)
-
+   
         # Save newly generated super graph & corresponding data to file
         input_dict = {}
-        #event_x_feats = ['cell_data', 'hid', 'pt']
         event_x_feats = ['cell_data', 'pid', 'hid', 'pt']
-        event_y_feats = ['y', 'y_pid', 'modulewise_true_edges', 'signal_true_edges']
+        event_y_1d_feats = ['y', 'y_pid']
+        event_y_2d_feats = ['modulewise_true_edges', 'signal_true_edges']
         super_dict = {'x': means, 'edge_index': super_graph} # edge_index = directed_graph
-        #super_dict = {'super_graph': super_graph, 'supernodes': supernodes, 'superedges': superedges} 
-
-        #batch = batch.cpu()
+        #print("modwise true edges  = ", batch.modulewise_true_edges[0].cpu().numpy())
+        
+        valid_nodes = super_graph.cpu().numpy()
+        print("super graph unique elems = ", set(super_graph))#, "Max elem = ", max(len(set(super_graph)[0]), len(set(super_graph)[1])))
+        print("graph unique elems = ", set(graph))#, "Max elem = ", max(len(set(graph)[0]), len(set(graph)[1])))
+        #print("unique pid = ", set(batch.pid))
+        print("unique y = ", batch.y.unique())
+        print("y = ", batch.y)
+        print("y pid = ", batch.y_pid)
         for k, v in batch:
           if (k in event_x_feats): # matches x dim
-            input_dict[k] = v
-            #print("cluster dim = ", clusters.size())
-            #print("key = ", k, "value dim = ", v.size())
-            #print("key = ", k, "value = ", v)
-            #input_dict[k] = scatter_mean(v[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
-            #print("key = ", k, "clustered value = ", (input_dict[k]).size())
+            print("key = ", k, "value dim = ", v.size())
+            input_dict[k] = scatter_mean(v[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
           elif k == 'event_file': # exception for event name string
             input_dict[k] = v[0]
-          elif (k in event_y_feats): # matches y dim 
-            #print("key = ", k, "value dim = ", v.size())
-            input_dict[k] = v[super_graph[0]]
-          #print("key = ", k, "value dim = ", (input_dict[k]).size())
-
+          elif (k in event_y_1d_feats): # y dim should match len of super graph 
+            np_v = v.cpu().numpy()
+            label_dim = super_graph.shape[1]
+            if k == 'y':
+              label = torch.zeros(label_dim)
+            elif k == 'y_pid':
+              label = torch.zeros(label_dim, dtype=torch.bool)
+            print("label dim = ", label_dim)
+            src_edge_mask = np.isin(valid_nodes[0], graph[0].cpu().numpy())
+            dst_edge_mask = np.isin(valid_nodes[0], graph[1].cpu().numpy())
+            y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
+            y_true_count = sum(y_mask)
+            print("super graph dim = ", super_graph.size())
+            print("y mask = ", y_mask.shape)
+            print("y true count = ", y_true_count)
+            input_dict[k] = np.logical_or(label, y_mask)
+            print("key = ", k, "clustered value dim = ", (input_dict[k]).size())
+          elif (k in event_y_2d_feats): # matches y dim 
+            print("key = ", k, "value dim = ", v.size())
+            #print("super graph dim = ", super_graph.size())
+            #print("super graph = ", super_graph[0].cpu().numpy())
+            np_v = v.cpu().numpy()
+            src_edge_mask = np.isin(np_v[0], valid_nodes)
+            dst_edge_mask = np.isin(np_v[1], valid_nodes)
+            y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
+            y_true_count = sum(y_mask)
+            print("y mask = ", y_mask.shape)
+            print("y true count = ", y_true_count)
+            src_edges = (v[0])[y_mask]
+            dst_edges = (v[1])[y_mask]
+            input_dict[k] = torch.vstack((src_edges, dst_edges))
+            #print("key = ", k, "clustered value = ", input_dict[k])
+            print("key = ", k, "clustered value dim = ", (input_dict[k]).size())
+        
         # Combine new data & processed old data 
         data = {**super_dict, **input_dict}
         for k, v in data.items():
@@ -396,21 +435,17 @@ class HierarchicalGNNBlock(nn.Module):
         data = Data(**data)
         torch.save(data, filepath)
         self.write_counter += 1
-        print("Data saved to filepath = ", filepath)
 
         return
 
-    def preprocess_graphs(self, x, nodes, edges, graph, pid, batch):
+    def preprocess_graphs(self, x, embeddings, nodes, edges, graph, pid, batch):
         
         x.requires_grad = True
-        print("x dim = ", x.size())
         
         # Compute clustering
         if self.profiling:
           cluster_time = time()
-        clusters = self.clustering2(x, graph)
-        print("cluster dim = ", clusters.size())
-        print("cluster = ", clusters)
+        clusters = self.clustering_input(x, graph)
         if self.profiling:
           cluster_time = time() - cluster_time
 
@@ -418,19 +453,15 @@ class HierarchicalGNNBlock(nn.Module):
         if self.profiling:
           center_time = time()
         means = scatter_mean(x[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
-        print("means dim = ", means.size())
         #means = nn.functional.normalize(means)
+        print("mean dim = ", means.size())
         if self.profiling:
           center_time = time() - center_time
         
         # Construct Graphs
         if self.profiling:
           construct_time = time()
-        print("graph size = ", graph.size())
-        #super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
-        super_graph, super_edge_weights, super_edge_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = 4)
-        print("super edge idx size = ", super_graph.size())
-        print("supergraph size = ", super_graph.size())
+        super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
         bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(x, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
         if self.profiling:
           construct_time = time() - construct_time
@@ -441,11 +472,24 @@ class HierarchicalGNNBlock(nn.Module):
 
         if self.profiling:
           graph_init_time = time()
+        '''
+        supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
+        supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
+        superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
+
+        supernodes_out = self.output_encoder(supernodes)
+        print("graph size = ", graph.size())
+        print("supergraph size = ", super_graph.size())
+        print("supernodes size = ", supernodes.size())
+        print("superedges size = ", superedges.size())
+        print("supernodes_out size = ", supernodes_out.size())
+        '''
+        if self.profiling:
           graph_init_time = time() - graph_init_time
           data_write_time = time()
         
         # Save preprocessed graphs to data directory
-        self.save_supergraph_data(super_graph, batch, clusters, means)
+        self.save_supergraph_data(graph, super_graph, clusters, means, batch)
 
         if self.profiling:
           data_write_time = time() - data_write_time
@@ -473,7 +517,7 @@ class HierarchicalGNNBlock(nn.Module):
         
         x.requires_grad = True
         if self.create_dset == True:
-          self.preprocess_graphs(x, nodes, edges, graph, pid, batch)
+          self.preprocess_graphs(x, embeddings, nodes, edges, graph, pid, batch)
           if self.profiling:
             cluster_time = time()
           clusters = self.clustering(x, embeddings, graph)
