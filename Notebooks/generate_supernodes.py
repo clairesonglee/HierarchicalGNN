@@ -85,7 +85,7 @@ def sub_pooling(x, edge_index, cluster_dict):
     granularity = 0.25
     n_subclusters = 0
     subcluster_labels = []
-    invalid_node_indices = []
+    valid_nodes = []
     for key in cluster_dict.keys():
       cluster = cluster_dict[key]
       cluster_size = len(cluster)
@@ -98,8 +98,8 @@ def sub_pooling(x, edge_index, cluster_dict):
         #rand_indices = np.random.randint(0, cluster_size, subcluster_size)
         rand_vals = cluster_coords[rand_indices]
         print('rand idxs = ', rand_indices, 'cluster = ', cluster, 'ridx type = ', type(rand_indices))
-        invalid_nodes = np.delete(np.array(cluster), rand_indices)
-        invalid_node_indices.extend(invalid_nodes)
+        cluster = np.array(cluster)
+        valid_nodes.extend(cluster[rand_indices])
         print("rand vals shape = ", rand_vals.shape) 
         print("subcluster size = ", subcluster_size)
         if sub_x == None:
@@ -114,8 +114,8 @@ def sub_pooling(x, edge_index, cluster_dict):
     print("subclusters labels = ", subcluster_labels)
 
     edge_index = edge_index.cpu()
-    mask = ~np.isin(edge_index, invalid_node_indices).any(axis=0)
-    sub_edge_index = edge_index[:, mask]
+    mask = np.isin(edge_index, valid_nodes).any(axis=0)
+    sub_edge_index = edge_index[:,mask]
     '''
     node_indices = np.arange(len(subcluster_labels))
     src_edge_mask = np.isin(edge_index[0], node_indices)
