@@ -41,6 +41,8 @@ def create_dataset():
     x, directed_graph = event.x, event.edge_index
     print("x dim = ", x.size(), "graph dim = ", graph.size())
 
+#def subsampling(x, edge_index, cluster_dict):
+
 def avg_pooling(x, edge_index, cluster_dict):
     invalid_key = -1
     if invalid_key in cluster_dict:
@@ -82,7 +84,7 @@ def sub_pooling(x, edge_index, cluster_dict):
 
     subcluster_dict = {}
     sub_x = None
-    granularity = 0.25
+    granularity = 0.5
     n_subclusters = 0
     subcluster_labels = []
     valid_nodes = []
@@ -321,7 +323,6 @@ def visualize_data(input_path, super_path, cluster_path):
       # Cluster nodes using HDBSCAN
       coords = x.cpu()
       cluster_labels, cluster_dict, n_clusters = clustering(coords)
-
       '''
       # Create a 3D scatter plot
       fig = plt.figure(figsize=(25,25))
@@ -343,7 +344,7 @@ def visualize_data(input_path, super_path, cluster_path):
       #ax.set_box_aspect([2, 2, 2]) 
 
       #plt.savefig('3d_scatter_plot.svg', format='svg')
-      #plt.savefig('3d_scatter_plot_' + str(i) + '.png')
+      plt.savefig('3d_scatter_plot_' + str(i) + '.png')
       #plt.show()
       '''
       # Pool clusters into subclusters and redraw graph 
@@ -364,18 +365,20 @@ def visualize_data(input_path, super_path, cluster_path):
             cluster_points = cluster_points.unsqueeze(0)
           print("reshaped cluster points dim = ", cluster_points.size())
           ax1.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], label=f'Cluster {cluster_id}', s=10)
-
-      for j in range(sub_graph.size(1)):
-        start, end = (sub_graph[0][j]).item(), (sub_graph[1][j]).item()
-        if start > end: 
-          temp = start
-          start = end
-          end = temp
-        if start > 0 and end < (sub_x.size())[0]:
-          print("start = ", start, "end = ", end)
-          print("(sub_x.size())[0] = ", (sub_x.size())[0])
-          ax1.plot([sub_x[start, 0], sub_x[end, 0]], [sub_x[start, 1], sub_x[end, 1]], [sub_x[start, 2], sub_x[end, 2]], color='blue', alpha=0.5)
-      plt.savefig('sub_3d_scatter_plot_' + str(i) + '.png')
+      
+      granularity = 0.5
+      edge_cut = int(math.floor(graph.size(1) * granularity))
+      sub_graph = graph[:, :edge_cut]
+      print("GRAPH dim = ", graph.size())
+      print("CUT SUBGRAPH dim = ", sub_graph.size())
+      print("edge cut = ", edge_cut)
+      #for j in range(sub_graph.size(1)):
+      for j in range(edge_cut):
+        start, end = (graph[0][j]).item(), (graph[1][j]).item()
+        #print("start = ", start, "end = ", end)
+        #print("(sub_x.size())[0] = ", (sub_x.size())[0])
+        ax1.plot([coords[start, 0], coords[end, 0]], [coords[start, 1], coords[end, 1]], [coords[start, 2], coords[end, 2]], color='pink', alpha=0.5)
+      plt.savefig('subsample_plot_' + str(i) + '.png')
 
     _, counts = y.unique(return_counts=True)
     ratio = counts[0]/counts[1]
