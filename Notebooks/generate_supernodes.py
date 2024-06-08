@@ -43,216 +43,87 @@ def create_dataset():
 
 #def subsampling(x, edge_index, cluster_dict):
 
-def avg_pooling(x, edge_index, cluster_dict):
-    invalid_key = -1
-    if invalid_key in cluster_dict:
-      del cluster_dict[invalid_key]
-
-    subcluster_dict = {}
-    sub_x = None
-    granularity = 0.25
-    n_subclusters = 0
-    subcluster_labels = []
-    node_indices = []
-    for key in cluster_dict.keys():
-      cluster = cluster_dict[key]
-      cluster_size = len(cluster)
-      cluster_coords = x[cluster]
-      subcluster_size = math.floor(cluster_size * granularity)
-      if subcluster_size > 0:
-        n_subclusters += 1
-        subcluster_labels.extend(np.repeat(key, subcluster_size))
-        groups = np.array_split(cluster_coords, subcluster_size, axis=0)
-        averages = [group.mean(dim=0, keepdim=True) for group in groups]
-        for i, average in enumerate(averages):
-          if sub_x == None:
-            sub_x = average
-          else:
-            sub_x = torch.cat((sub_x, average), dim=0)
-      assert len(set(subcluster_labels)) == n_subclusters
-      assert len(subcluster_labels) == (sub_x.size())[0]
-    print("sub_x dim = ", sub_x.size())
-    print("subclusters label dim = ", len(subcluster_labels))
-    print("num subclusters = ", n_subclusters)
-    print("subclusters labels = ", subcluster_labels)
-    return sub_x, subcluster_labels, n_subclusters 
-
-def sub_pooling(x, edge_index, cluster_dict):
-    invalid_key = -1
-    if invalid_key in cluster_dict:
-      del cluster_dict[invalid_key]
-
-    subcluster_dict = {}
-    sub_x = None
-    granularity = 0.5
-    n_subclusters = 0
-    subcluster_labels = []
-    valid_nodes = []
-    for key in cluster_dict.keys():
-      cluster = cluster_dict[key]
-      cluster_size = len(cluster)
-      cluster_coords = x[cluster]
-      subcluster_size = math.floor(cluster_size * granularity)
-      if subcluster_size > 0:
-        n_subclusters += 1
-        subcluster_labels.extend(np.repeat(key, subcluster_size))
-        rand_indices = np.random.choice(cluster_size, subcluster_size, replace=False)
-        #rand_indices = np.random.randint(0, cluster_size, subcluster_size)
-        rand_vals = cluster_coords[rand_indices]
-        print('rand idxs = ', rand_indices, 'cluster = ', cluster, 'ridx type = ', type(rand_indices))
-        cluster = np.array(cluster)
-        valid_nodes.extend(cluster[rand_indices])
-        print("rand vals shape = ", rand_vals.shape) 
-        print("subcluster size = ", subcluster_size)
-        if sub_x == None:
-          sub_x = rand_vals
-        else:
-          sub_x = torch.cat((sub_x, rand_vals), dim=0)
-      assert len(set(subcluster_labels)) == n_subclusters
-      assert len(subcluster_labels) == (sub_x.size())[0]
-    print("sub_x dim = ", sub_x.size())
-    print("subclusters label dim = ", len(subcluster_labels))
-    print("num subclusters = ", n_subclusters)
-    print("subclusters labels = ", subcluster_labels)
-
-    edge_index = edge_index.cpu()
-    mask = np.isin(edge_index, valid_nodes).any(axis=0)
-    sub_edge_index = edge_index[:,mask]
-    '''
-    node_indices = np.arange(len(subcluster_labels))
-    src_edge_mask = np.isin(edge_index[0], node_indices)
-    dst_edge_mask = np.isin(edge_index[1], node_indices)
-    y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
-    src_edges = (edge_index[0])[y_mask]
-    dst_edges = (edge_index[1])[y_mask]
-    sub_edge_index = torch.vstack((src_edges, dst_edges))
-    '''
-    print("edge index = ", edge_index.size())
-    print("sub edge index = ", sub_edge_index.size())
-
-    return sub_x, subcluster_labels, n_subclusters, sub_edge_index
-
-def clustering(x):
-    # Run HDBSCAN/DBSCAN clustering algorithm
-    cluster_time = time()
-    clusterer = HDBSCAN(min_cluster_size=3, min_samples=3)
-    #clusterer = DBSCAN(eps=0.5, min_samples=3)
-    cluster_labels = clusterer.fit_predict(x.cpu())
-    cluster_time = time() - cluster_time
-
-    # Assign nodes using cluster labels
-    cluster_dict = {}
-    for i, cluster in enumerate(cluster_labels):
-      if cluster not in cluster_dict.keys():
-        cluster_dict[cluster] = []
-      (cluster_dict[cluster]).append(i)
-
-    n_clusters = len(set(cluster_labels)) - 1
-    print ("n_clusters (node len) = ", n_clusters)
-
-    return cluster_labels, cluster_dict, n_clusters
-
-def create_coarse_data(output_path, event_dir):
+def create_coarse_data(output_path, event_dir, resolution):
   filename = 0
-  total_cluster_time = 0
   y_distrib = []
 
   for event_path in event_dir:
     # Load event node and graph data 
     event = torch.load(event_path)
-    x, directed_graph = event.x, event.edge_index
-
-    cluster_labels, cluster_dict, n_clusters = clustering(x)
-
-    # Aggregate node coordinate values
-    node_len = n_clusters
-    
-    # Convert cluster_dict to a tensor of cluster indices
-    cluster_indices = []
-    node_indices = []
-    for key, val in cluster_dict.items():
-      if key != -1:
-        cluster_indices.extend([key] * len(val))
-        node_indices.extend(val)
-    cluster_indices = (torch.tensor(cluster_indices)).to('cuda:0')
-    node_indices = (torch.tensor(node_indices)).to('cuda:0')
-
-    # Gather the node coordinates corresponding to the cluster indices
-    node_coords = x[node_indices]
-
-    # Compute the mean coordinates for each cluster using scatter_mean
-    mean_coords = scatter_mean(node_coords, cluster_indices, dim=0)
-    print("node coord dim = ", node_coords.size())
-    print("mean coord dim = ", mean_coords.size())
-
-
-    # Apply mask to event graph features
-    pid = scatter_mean(event.pid[node_indices], cluster_indices, dim=0)
-    hid = scatter_mean(event.hid[node_indices], cluster_indices, dim=0)
-    pt = scatter_mean(event.pt[node_indices], cluster_indices, dim=0)
-    cell_data = scatter_mean((event.cell_data)[node_indices,:], cluster_indices, dim=0)
-    print("pid = ", pid.size(), "hid = ", hid.size(), "pt = ", pt.size(), "cell data = ", cell_data.size())
-
-    # Remove edges connected to invalid clusters
-    #invalid_nodes = cluster_dict[-1]
+    x, edge_index = event.x, event.edge_index
     event = event.cpu()
-    node_indices = node_indices.cpu()
-    edge_feats = ['edge_index', 'modulewise_true_edges', 'signal_true_edges']
-    src_edge_mask = np.isin(event.edge_index[0], node_indices)
-    dst_edge_mask = np.isin(event.edge_index[1], node_indices)
-    y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
-    src_edges = (event.edge_index[0])[y_mask]
-    dst_edges = (event.edge_index[1])[y_mask]
-    edges = torch.vstack((src_edges, dst_edges))
-    y_true_count = sum(y_mask)
-    y = (event.y)[y_mask]
-    y_pid = (event.y_pid)[y_mask]
-    print("edge dim = ", edges.size(), "# of unique edges = ", len(edges.unique()))
-    
-    src_edge_mask = np.isin(event.modulewise_true_edges[0], node_indices)
-    dst_edge_mask = np.isin(event.modulewise_true_edges[1], node_indices)
-    y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
-    src_edges = (event.modulewise_true_edges[0])[y_mask]
-    dst_edges = (event.modulewise_true_edges[1])[y_mask]
-    modwise_edges = torch.vstack((src_edges, dst_edges))
+    #print("Event attr: ", dir(event))
 
-    src_edge_mask = np.isin(event.signal_true_edges[0], node_indices)
-    dst_edge_mask = np.isin(event.signal_true_edges[1], node_indices)
-    y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
-    src_edges = (event.signal_true_edges[0])[y_mask]
-    dst_edges = (event.signal_true_edges[1])[y_mask]
-    signal_edges = torch.vstack((src_edges, dst_edges))
-    print("modwise edges = ", modwise_edges.size(), "signal edges = ", signal_edges.size())
+    n_edges = edge_index.size(1)
+    n_subedges = int(math.floor(n_edges * resolution))
+    subedge_feats = []
+    edge_feats = ['y', 'y_pid', 'edge_index']
+    edge_true_feats = ['modulewise_true_edges', 'signal_true_edges']
+    edge_indices = torch.tensor(np.random.choice(n_edges, n_subedges, replace=False))
+    print("Edge indices size = ", len(edge_indices))
+    edge_indices = edge_indices.cpu()
+
+    node_indices = None
+    for feature in edge_feats:
+      edge_feat = getattr(event, feature, None)
+      print("Feature = ", feature, "Feature size = ", edge_feat.size())
+      if edge_feat.dim() > 1:
+        subedge_feat = edge_feat[:, edge_indices]
+        node_indices = set(subedge_feat[0]).union(set(subedge_feat[1]))
+        node_indices = torch.tensor(list(node_indices), dtype=torch.int64)
+      else:
+        subedge_feat = edge_feat[edge_indices]
+      print("Feature = ", feature, "Subfeature size = ", subedge_feat.size())
+      subedge_feats.append(subedge_feat)
+    node_indices = node_indices.cpu()
+    
+    subedge_true_feats = []
+    for feature in edge_true_feats:
+      edge_true_feat = getattr(event, feature, None)
+      print("Feature = ", feature, "Feature size = ", edge_feat.size())
+      subedge_true_feat = edge_true_feat
+      subedge_true_feats.append(subedge_true_feat)
+    
+    # Apply mask to event graph features
+    node_feats = ['x', 'pid', 'hid', 'pt', 'cell_data']
+    subnode_feats = []
+    print("Node indices size = ", len(node_indices))
+    for feature in node_feats:
+      node_feat = getattr(event, feature, None)
+      if node_feat.dim() > 1:
+        subnode_feat = node_feat[node_indices,:]
+      else:
+        subnode_feat = node_feat[node_indices]
+      print("Feature = ", feature, "Subfeature size = ", subnode_feat.size())
+      subnode_feats.append(subnode_feat)
+
 
     # Build data dictionary and save to file
-    coarse_dict = {'x': mean_coords, 'edge_index': edges, 'y': y, 'y_pid': y_pid, \
-                   'cell_data': cell_data, 'pid': pid, 'hid': hid, 'pt': pt, \
-                   'modulewise_true_edges': modwise_edges, 'signal_true_edges': signal_edges} 
-                   # edge_index = directed_graph
-    #print("y distribution = ", y.unique(return_counts=True))
-    print("y pid distribution = ", y_pid.unique(return_counts=True))
-    print("y distribution = ", y.unique(return_counts=True))
+    coarse_dict = {'x': subnode_feats[0], \
+                   'pid': subnode_feats[1], \
+                   'hid': subnode_feats[2], \
+                   'pt': subnode_feats[3], \
+                   'cell_data': subnode_feats[4], \
+                   'y': subedge_feats[0], \
+                   'y_pid': subedge_feats[1], \
+                   'edge_index': subedge_feats[2], \
+                   'modulewise_true_edges': subedge_true_feats[0], \
+                   'signal_true_edges': subedge_true_feats[1]}
+    filename = save_data(event, coarse_dict, output_path, filename)
+    # Count true instances in y and y_pid labels
+    y = subedge_feats[0]
+    y_pid = subedge_feats[1]
     _, counts = y.unique(return_counts=True)
     ratio = counts[0]/counts[1]
-    y_distrib.append(ratio)
-    '''
-    input_dict = {}
-    for feature in event_x_feats:
-      input_dict[feature] = event[feature]
-    input_dict['event_file'] = event.event_file[0]
+    y_distrib.append(ratio)  
+  print("Subgraph label distribution = ", y_distrib)  
 
-    # Combine new data & processed old data 
-    data = {**coarse_dict, **input_dict}
-    filename = save_data(data, output_path, filename)
-    '''
-    #filename = save_data(coarse_dict, output_path, filename)
-  print("y distribution array = ", y_distrib)  
-
-  # Profile cluster time
-  print("Total cluster time = ", total_cluster_time)
   return 
 
-def save_data(data, output_path, filename):
+def save_data(event, data, output_path, filename):
+
+    # Combine new data & processed old data 
+    #data = {**coarse_dict, **input_dict}
     for k, v in data.items():
       if torch.is_tensor(v):
         data[k] = v.clone().detach()
@@ -267,162 +138,97 @@ def save_data(data, output_path, filename):
     filename += 1
     return filename
 
-def create_super_data(input_path, super_path, hparams):
-  super_graph_construction = DynamicGraphConstruction("sigmoid", hparams)
-  bipartite_graph_construction = DynamicGraphConstruction("exp", hparams)
-  supernode_encoder = make_mlp(
-            hparams["latent"],
-            hparams["hidden"],
-            hparams["latent"] - hparams["emb_dim"],
-            hparams["nb_node_layer"],
-            output_activation=hparams["hidden_activation"],
-            hidden_activation=hparams["hidden_activation"],
-            layer_norm=hparams["layernorm"],
-        )
-  self.superedge_encoder = make_mlp(
-            2 * hparams["latent"],
-            hparams["hidden"],
-            hparams["latent"],
-            hparams["nb_edge_layer"],
-            layer_norm=hparams["layernorm"],
-            output_activation=hparams["hidden_activation"],
-            hidden_activation=hparams["hidden_activation"],
-        )
-
-  for event_path in event_dir:
-    clusters = clustering(x, graph)
-
-    # Compute Centers
-    means = scatter_mean(embeddings[clusters >= 0], clusters[clusters >= 0], dim=0, dim_size=clusters.max()+1)
-    means = nn.functional.normalize(means)
-        
-    # Construct Graphs
-    super_graph, super_edge_weights = super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
-    bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = hparams["bipartitegraph_sparsity"], logits = True)
-        
-    # Initialize supernode & edges by aggregating node features. Normalizing with 1-norm to improve training stability
-    supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
-    supernodes = torch.cat([means, checkpoint(supernode_encoder, supernodes)], dim = -1)
-    superedges = checkpoint(superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
-    print("supernode dim = ", supernodes.size(), "superedge dim = ", superedges.size())
-
-
-def visualize_data(input_path, super_path, cluster_path):
-  event_dir = glob(input_path)
-  super_event_dir = glob(super_path)
-  cluster_event_dir = glob(cluster_path)
-  y_distrib = []
-  super_y_distrib = []
-  cluster_y_distrib = []
-  for i, event_path in enumerate(event_dir):
-    # Load event node and graph data 
-    event = torch.load(event_path)
-    #super_event = torch.load(super_event_dir[i])
-    x, y, graph = event.x, event.y, event.edge_index
-    if i == 0 or i == 1 or i == 2:
-      # Cluster nodes using HDBSCAN
-      coords = x.cpu()
-      cluster_labels, cluster_dict, n_clusters = clustering(coords)
-      '''
+def plot_input(graph, coords, i):
       # Create a 3D scatter plot
       fig = plt.figure(figsize=(25,25))
       ax = fig.add_subplot(111, projection='3d')
 
-      # Plot each cluster with a different color
-      for cluster_id in range(n_clusters):
-        cluster_points = coords[cluster_labels == cluster_id]
-        ax.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], label=f'Cluster {cluster_id}', s=10)
-
-      for j in range(graph.size(1)):
+      n_edges = graph.size(1)
+      print("Edges = ", n_edges)
+      for j in range(n_edges):
         start, end = graph[0][j], graph[1][j]
-        ax.plot([coords[start, 0], coords[end, 0]], [coords[start, 1], coords[end, 1]], [coords[start, 2], coords[end, 2]], color='purple', alpha=0.5)
+        ax.plot([coords[start, 0], coords[end, 0]], [coords[start, 1], coords[end, 1]], [coords[start, 2], coords[end, 2]], color='black', alpha=0.5)
  
+      #ax.scatter(coords[:, 0], coords[:, 1], coords[:, 2])
+
       ax.tick_params(axis='x', which='major', width=100)
       ax.tick_params(axis='y', which='major', width=100)
       ax.tick_params(axis='z', which='major', width=100)
 
-      #ax.set_box_aspect([2, 2, 2]) 
+      plt.savefig('input_plot_' + str(i) + '.png')
 
-      #plt.savefig('3d_scatter_plot.svg', format='svg')
-      plt.savefig('3d_scatter_plot_' + str(i) + '.png')
-      #plt.show()
-      '''
-      # Pool clusters into subclusters and redraw graph 
-      sub_x, subcluster_labels, n_subclusters, sub_graph = sub_pooling(coords, graph, cluster_dict)
+def plot_subgraph(graph, coords, idx):
+      # Sample edges using hyperparameter
+      n_subgraphs = 4
+      resolutions = [0.5, 0.25, 0.10, 0.05]
+      names = ['50%', '25%', '10%', '5%']
+      colors = ['blue', 'green', 'purple', 'red']
 
-      # Create a 3D scatter plot
-      fig = plt.figure(figsize=(25,25))
-      ax1 = fig.add_subplot(111, projection='3d')
-      max_cluster_id = max(subcluster_labels)
-      for cluster_id in range(max_cluster_id):
-        if cluster_id in subcluster_labels:
-          print("cluster id in labels / id = ", cluster_id)
-          cluster_indices = [idx for idx, val in enumerate(subcluster_labels) if val == cluster_id]
-          print("cluster indices = ", cluster_indices)
-          cluster_points = sub_x[cluster_indices,:]
-          print("cluster points dim = ", cluster_points.size())
-          if cluster_points.dim() == 1:
-            cluster_points = cluster_points.unsqueeze(0)
-          print("reshaped cluster points dim = ", cluster_points.size())
-          ax1.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], label=f'Cluster {cluster_id}', s=10)
-      
-      granularity = 0.5
-      edge_cut = int(math.floor(graph.size(1) * granularity))
-      sub_graph = graph[:, :edge_cut]
-      print("GRAPH dim = ", graph.size())
-      print("CUT SUBGRAPH dim = ", sub_graph.size())
-      print("edge cut = ", edge_cut)
-      #for j in range(sub_graph.size(1)):
-      for j in range(edge_cut):
-        start, end = (graph[0][j]).item(), (graph[1][j]).item()
-        #print("start = ", start, "end = ", end)
-        #print("(sub_x.size())[0] = ", (sub_x.size())[0])
-        ax1.plot([coords[start, 0], coords[end, 0]], [coords[start, 1], coords[end, 1]], [coords[start, 2], coords[end, 2]], color='pink', alpha=0.5)
-      plt.savefig('subsample_plot_' + str(i) + '.png')
+      n_edges = graph.size(1)
+      for i in range(n_subgraphs):
+        # Create a 3D scatter plot
+        fig = plt.figure(figsize=(25,25))
+        ax1 = fig.add_subplot(111, projection='3d')
 
-    _, counts = y.unique(return_counts=True)
-    ratio = counts[0]/counts[1]
-    y_distrib.append(ratio)
-  '''
-  for i, event_path in enumerate(super_event_dir):
+        resolution = resolutions[i]
+        name = names[i]
+        color = colors[i]
+        n_subedges = int(math.floor(n_edges * resolution))
+        edge_indices = np.random.choice(n_edges, n_subedges, replace=False)
+        print("Edges = ", n_edges, "Subedges = ", n_subedges)
+        for j in range(n_subedges):
+          edge = edge_indices[j]
+          start, end = (graph[0][edge]).item(), (graph[1][edge]).item()
+          ax1.plot([coords[start, 0], coords[end, 0]], [coords[start, 1], coords[end, 1]], [coords[start, 2], coords[end, 2]], color=color, alpha=0.5)
+
+        #ax1.scatter(coords[:, 0], coords[:, 1], coords[:, 2])
+
+        plt.savefig('subsample_plot_' + name + '_' + str(idx) + '.png')
+        
+
+def visualize_data(input_path, super_path, cluster_path):
+  event_dir = glob(input_path)
+  y_distrib = []
+  for i, event_path in enumerate(event_dir):
+    # Load event node and graph data 
     event = torch.load(event_path)
-    x, y, graph = event.x, event.y, event.edge_index
+    x, y, y_pid, graph = event.x, event.y, event.y_pid, event.edge_index
+    test_plots = np.arange(2)
+    if i in test_plots:
+      # Cluster nodes using HDBSCAN
+      coords = x.cpu()
+      #plot_input(graph, coords, i)
+      #plot_subgraph(graph, coords, i)
+
+    # Count true instances in y and y_pid labels
     _, counts = y.unique(return_counts=True)
     ratio = counts[0]/counts[1]
-    super_y_distrib.append(ratio)
-  for i, event_path in enumerate(cluster_event_dir):
-    event = torch.load(event_path)
-    x, y, graph = event.x, event.y, event.edge_index
-    _, counts = y.unique(return_counts=True)
-    ratio = counts[0]/counts[1]
-    cluster_y_distrib.append(ratio)
-  '''
-  #print("y distribution array = ", y_distrib)
-  #print("super y distribution array = ", super_y_distrib)
-  #print("cluster y distribution array = ", cluster_y_distrib)
+    y_distrib.append(ratio)  
+  print("Input label distribution = ", y_distrib)  
 
 def main():
   # Set filepaths and initialize variables 
   #input_path = "/data/FNAL/events/train/*"
   #super_path = "/data/FNAL/processed/train/*"
-  #output_path = "/data/FNAL/coarse_events/train/"
+  #cluster_path = "/data/FNAL/processed/train/*"
+  #output_path = "/data/FNAL/coarse_events/10p-res/train/"
 
   #input_path = "/data/FNAL/events/test/*"
   #super_path = "/data/FNAL/processed_no_emb/test/*"
   #cluster_path = "/data/FNAL/processed/test/*"
-  #output_path = "/data/FNAL/coarse_events/test/"
+  #output_path = "/data/FNAL/coarse_events/10p-res/test/"
 
   input_path = "/data/FNAL/events/val/*"
   super_path = "/data/FNAL/processed_no_emb/val/*"
   cluster_path = "/data/FNAL/processed/val/*"
-  output_path = "/data/FNAL/coarse_events/val/"
+  output_path = "/data/FNAL/coarse_events/10p-res/val/"
 
   #'''
   event_dir = glob(input_path)
-  #data = create_coarse_data(output_path, event_dir)
-  visualize_data(input_path, super_path, cluster_path)
+  resolution = 0.10
+  data = create_coarse_data(output_path, event_dir, resolution)
+  #visualize_data(input_path, super_path, cluster_path)
   '''
-  
   config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
   with open(config_path) as f:
     hparams = yaml.load(f, Loader=yaml.FullLoader)
