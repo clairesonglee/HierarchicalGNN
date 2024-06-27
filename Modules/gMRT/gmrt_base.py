@@ -51,6 +51,7 @@ class gMRTBase(LightningModule):
             self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))
             
         else:
+          print("INPUT DIRECTORY = ", self.hparams["data_dir"])
           paths = load_dataset_paths(self.hparams["data_dir"], self.hparams["datatype_names"])
           paths = paths[:sum(self.hparams["train_split"])]
           self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))

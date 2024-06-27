@@ -21,6 +21,8 @@ sys.path.append("../..")
 from utils import load_dataset_paths, TrackMLDataset, TrackMLSuperDataset
 from tracking_utils import eval_metrics
 
+from time import time
+
 class EdgeClassifierBase(LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -28,11 +30,12 @@ class EdgeClassifierBase(LightningModule):
         Initialise the Lightning Module that can scan over different filter training regimes
         """
         self.save_hyperparameters(hparams)
-        self.use_superdataset = False #True
+        self.use_superdataset = False
         self.num_workers = 16
         
     def setup(self, stage):
         if self.use_superdataset: 
+          print("Input filepath = ", self.hparams["super_dir"])
           paths = load_dataset_paths(self.hparams["super_dir"], self.hparams["datatype_names"])
         else:
           paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
@@ -69,7 +72,13 @@ class EdgeClassifierBase(LightningModule):
         else:
             return None
 
+    def on_train_epoch_start(self):
+        self.epoch_time = time()
 
+    def on_train_epoch_end(self):
+        self.epoch_time = time() - self.epoch_time
+        self.log("epoch_time", self.epoch_time)
+        print("Epoch time = ", self.epoch_time)
 
 
     def configure_optimizers(self):
@@ -139,10 +148,13 @@ class EdgeClassifierBase(LightningModule):
             y = batch.y_pid
             
         weights = self.get_training_weight(batch, graph, y.bool())
+        print("y size = ", batch.y.size())
+        print("y pid size = ", batch.y_pid.size())
         
         loss = nn.functional.binary_cross_entropy(scores, y.float(), reduction='none')
         loss = torch.dot(loss, weights)
         
+        print("loss = ", loss)
         self.log("training_loss", loss)
         
         return loss 
@@ -153,7 +165,8 @@ class EdgeClassifierBase(LightningModule):
         """
         This method is shared between validation steps and test steps
         """
-        
+        print("ENTER SHARED EVAL FUNCTION")        
+ 
         scores = self(batch.x, batch.edge_index)
         
         if self.hparams["true_edges"] == "modulewise_true_edges":
@@ -179,6 +192,7 @@ class EdgeClassifierBase(LightningModule):
         G.from_cudf_edgelist(df, source = "src", destination = "dst", edge_attr = "weights")
         connected_components = cugraph.components.connected_components(G)
         bipartite_graph = torch.stack([torch.as_tensor(connected_components["vertex"]), torch.as_tensor(connected_components["labels"])], dim = 0)
+        print("bipartite_graph dim = ", bipartite_graph.size())
         
         # Evaluate using not modified event to avoid miscalculation
         bipartite_graph[0] = batch.inverse_mask[bipartite_graph[0]]

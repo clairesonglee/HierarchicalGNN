@@ -30,13 +30,18 @@ class BipartiteClassificationBase(LightningModule):
         Initialise the Lightning Module
         """
         self.save_hyperparameters(hparams)
+        self.use_superdataset = False #True
         self.fd = open('baseline_epoch_times.csv','w')
         header = ['Epoch', 'Time']
         self.writer = csv.DictWriter(self.fd, fieldnames = header)
         self.writer.writeheader()
         
     def setup(self, stage):
-        paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
+        if self.use_superdataset:
+          print("Input filepath = ", self.hparams["super_dir"])
+          paths = load_dataset_paths(self.hparams["super_dir"], self.hparams["datatype_names"])
+        else:
+          paths = load_dataset_paths(self.hparams["input_dir"], self.hparams["datatype_names"])
         paths = paths[:sum(self.hparams["train_split"])]
         self.trainset, self.valset, self.testset = random_split(paths, self.hparams["train_split"], generator=torch.Generator().manual_seed(0))
         

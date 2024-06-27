@@ -7,6 +7,8 @@ from GNNEmbedding.Models.IN import Embedding_InteractionGNN
 from GNNEmbedding.Models.HGNN_GMM import Embedding_HierarchicalGNN_GMM
 from BipartiteClassification.Models.HGNN_GMM import BC_HierarchicalGNN_GMM
 from gMRT.Models.HGNN_GMM import gMRT
+from supergMRT.Models.HGNN_GMM import supergMRT
+from SimplifiedEdgeClassifier.Models.IN import Simplified_EC_InteractionGNN
 
 path = "../Modules/"
 
@@ -39,7 +41,17 @@ def model_selector(model_name, sweep_configs = {}):
     elif model_name == "gMRT" or model_name == "5":
         with open(path + "gMRT/Configs/HGNN_GMM.yaml") as f:
             hparams = yaml.load(f, Loader=yaml.FullLoader) 
-        model = gMRT(process_hparams({**hparams, **sweep_configs}))      
+        model = gMRT(process_hparams({**hparams, **sweep_configs}))
+
+    elif model_name == "supergMRT" or model_name == "6":
+        with open(path + "supergMRT/Configs/HGNN_GMM.yaml") as f:
+            hparams = yaml.load(f, Loader=yaml.FullLoader) 
+        model = supergMRT(process_hparams({**hparams, **sweep_configs}))
+
+    elif model_name == "S-EC_IN" or model_name == "7":
+        with open(path + "SimplifiedEdgeClassifier/Configs/IN.yaml") as f:
+            hparams = yaml.load(f, Loader=yaml.FullLoader) 
+        model = Simplified_EC_InteractionGNN(process_hparams({**hparams, **sweep_configs}))
     else:
         raise ValueError("Can't Find Model Name {}!".format(model_name))
         

@@ -23,7 +23,7 @@ from time import time
 from torch_geometric.data import Data
 import csv
 
-np.set_printoptions(threshold=sys.maxsize)
+#np.set_printoptions(threshold=sys.maxsize)
 
 class InteractionGNNBlock(nn.Module):
 
@@ -119,7 +119,7 @@ class HierarchicalGNNBlock(nn.Module):
         self.super_dir = hparams["super_dir"]
         self.read_counter = 0
         self.write_counter = 0
-        self.create_dset = True #False
+        self.create_dset = False
  
         self.supernode_encoder = make_mlp(
             hparams["latent"],
@@ -256,7 +256,6 @@ class HierarchicalGNNBlock(nn.Module):
               conn_comp_time = time()
             # Connected Components
             mask = likelihood >= self.score_cut.to(likelihood.device)
-            print("mask dim = ", len(mask))
             try:
                 G = cugraph.Graph()
                 df = cudf.DataFrame({"src": cp.asarray(graph[0, mask]),
@@ -330,7 +329,6 @@ class HierarchicalGNNBlock(nn.Module):
               conn_comp_time = time()
             # Connected Components
             mask = likelihood >= self.score_cut.to(likelihood.device)
-            print("mask dim = ", len(mask))
             try:
                 G = cugraph.Graph()
                 df = cudf.DataFrame({"src": cp.asarray(graph[0, mask]),
@@ -377,8 +375,15 @@ class HierarchicalGNNBlock(nn.Module):
         #print("modwise true edges  = ", batch.modulewise_true_edges[0].cpu().numpy())
         
         valid_nodes = super_graph.cpu().numpy()
+        node_mask = np.arange(super_graph.shape[1])
         print("super graph unique elems = ", set(super_graph))#, "Max elem = ", max(len(set(super_graph)[0]), len(set(super_graph)[1])))
+        for v in set(super_graph):
+          print("super graph unique elem len = ", len(v))#, "Max elem = ", max(len(set(super_graph)[0]), len(set(super_graph)[1])))
+          print('v = ', sorted(v.cpu().numpy()), "node_mask = ", sorted(list(set(node_mask))))
+          node_and_set = (set(node_mask) == v.cpu().numpy())
+          print("node and set = ", node_and_set)
         print("graph unique elems = ", set(graph))#, "Max elem = ", max(len(set(graph)[0]), len(set(graph)[1])))
+        print("nodes in super graph len = ", len(np.arange(super_graph.shape[1])))
         #print("unique pid = ", set(batch.pid))
         print("unique y = ", batch.y.unique())
         print("y = ", batch.y)
@@ -398,7 +403,7 @@ class HierarchicalGNNBlock(nn.Module):
               label = torch.zeros(label_dim, dtype=torch.bool)
             print("label dim = ", label_dim)
             src_edge_mask = np.isin(valid_nodes[0], graph[0].cpu().numpy())
-            dst_edge_mask = np.isin(valid_nodes[0], graph[1].cpu().numpy())
+            dst_edge_mask = np.isin(valid_nodes[1], graph[1].cpu().numpy())
             y_mask = np.logical_and(src_edge_mask, dst_edge_mask)
             y_true_count = sum(y_mask)
             print("super graph dim = ", super_graph.size())
@@ -489,7 +494,7 @@ class HierarchicalGNNBlock(nn.Module):
           data_write_time = time()
         
         # Save preprocessed graphs to data directory
-        self.save_supergraph_data(graph, super_graph, clusters, means, batch)
+        #self.save_supergraph_data(graph, super_graph, clusters, means, batch)
 
         if self.profiling:
           data_write_time = time() - data_write_time

@@ -261,20 +261,17 @@ class DynamicGraphConstruction(nn.Module):
             if self.training:
                 maximum_dist = (src_embeddings[graph[0]] - dst_embeddings[graph[1]]).square().sum(-1).sqrt().max()
                 self.knn_radius = 0.9*self.knn_radius + 0.11*maximum_dist # Keep track of the minimum radius needed to give right number of neighbors
-        print("supergraph size = ", graph.size())
         
         # Compute bipartite attention
         likelihood = torch.einsum('ij,ij->i', src_embeddings[graph[0]], dst_embeddings[graph[1]])
-        print("likelihood = ", likelihood)
         edge_weights_logits = self.weight_normalization(likelihood.unsqueeze(1)).squeeze() # regularize to ensure variance of weights
         edge_weights = self.weighting_function(edge_weights_logits)
         
         if norm:
             edge_weights = edge_weights/edge_weights.mean()
-        print("edge weight dim = ", edge_weights.size())
         edge_weights = edge_weights.unsqueeze(1)
         if logits:
             return graph, edge_weights, edge_weights_logits
 
-        return graph, edge_weights, positive_idxs
+        return graph, edge_weights
     

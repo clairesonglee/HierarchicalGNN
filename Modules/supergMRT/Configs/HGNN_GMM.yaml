@@ -1,6 +1,8 @@
 # Input/output configuration
-data_dir: /data/FNAL/events
-super_dir: /data/FNAL/processed_no_emb
+#data_dir: /data/FNAL/events
+data_dir: /data/FNAL/coarse_events/25p-res
+super_dir: /data/FNAL/processed
+#super_dir: /data/FNAL/processed_no_emb
 #super_dir: /data/FNAL/supergraphs
 
 # Dataset parameters

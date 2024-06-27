@@ -200,35 +200,137 @@ def visualize_data(input_path, super_path, cluster_path):
       #plot_input(graph, coords, i)
       #plot_subgraph(graph, coords, i)
 
+
+def y_stats(event_dir, subevent_dir):
+  y_distrib, sub_y_distrib = [], []
+  for i, event_path in enumerate(event_dir):
+    event = torch.load(event_path)
+    y, y_pid = event.y, event.pid
     # Count true instances in y and y_pid labels
     _, counts = y.unique(return_counts=True)
-    ratio = counts[0]/counts[1]
+    ratio = (counts[0]/counts[1]).item()
     y_distrib.append(ratio)  
-  print("Input label distribution = ", y_distrib)  
 
+  for i, subevent_path in enumerate(subevent_dir):
+    subevent = torch.load(subevent_path)
+    y, y_pid = subevent.y, subevent.pid
+    # Count true instances in y and y_pid labels
+    _, counts = y.unique(return_counts=True)
+    ratio = (counts[0]/counts[1]).item()
+    sub_y_distrib.append(ratio)  
+  
+  y_distrib = np.array(y_distrib)
+  mean_value = np.mean(y_distrib)
+  median_value = np.median(y_distrib)
+  std_dev_value = np.std(y_distrib)
+  min_value = np.min(y_distrib)
+  max_value = np.max(y_distrib)
+
+  print("Graph Data Statistics")
+  print(f"Mean: {mean_value}")
+  print(f"Median: {median_value}")
+  print(f"Standard Deviation: {std_dev_value}")
+  print(f"Minimum: {min_value}")
+  print(f"Maximum: {max_value}")
+  print("====================================")
+
+  sub_y_distrib = np.array(sub_y_distrib)
+  mean_value = np.mean(sub_y_distrib)
+  median_value = np.median(sub_y_distrib)
+  std_dev_value = np.std(sub_y_distrib)
+  min_value = np.min(sub_y_distrib)
+  max_value = np.max(sub_y_distrib)
+
+  print("Subgraph Data Statistics")
+  print(f"Mean: {mean_value}")
+  print(f"Median: {median_value}")
+  print(f"Standard Deviation: {std_dev_value}")
+  print(f"Minimum: {min_value}")
+  print(f"Maximum: {max_value}")
+
+'''
+def test_dataloader(event):
+  config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
+  with open(config_path) as f:
+        hparams = yaml.load(f, Loader=yaml.FullLoader)
+        # the MASK tensor filter out hits from event
+        if self.hparams["noise"]:
+            mask = (event.pid == event.pid) # If using noise then only filter out those with nan PID
+        else:
+            mask = (event.pid != 0) # If not using noise then filter out those with PID 0, which represent that they are noise
+        if self.hparams["hard_ptcut"] > 0:
+            mask = mask & (event.pt > self.hparams["hard_ptcut"]) # Hard background cut in pT
+        if self.hparams["remove_isolated"]:
+            node_mask = torch.zeros(event.pid.shape).bool()
+            node_mask[event.edge_index.unique()] = torch.ones(1).bool() # Keep only those nodes with edges attached to it
+            mask = mask & node_mask
+
+        # Set the pT of noise hits to be 0
+        event.pt[event.pid == 0] = 0
+
+        # Provide inverse mask to invert the change when necessary (e.g. track evaluation with not modified files)
+        inverse_mask = torch.zeros(len(event.pid)).long()
+        inverse_mask[mask] = torch.arange(mask.sum())
+        event.inverse_mask = torch.arange(len(mask))[mask]
+
+        # Compute number of hits (nhits) of each particle
+        _, inverse, counts = event.pid.unique(return_inverse = True, return_counts = True)
+        event.nhits = counts[inverse]
+
+        if self.hparams["primary"]:
+            event.signal_mask = ((event.nhits >= self.hparams["n_hits"]) & (event.primary == 1))
+        else:
+            event.signal_mask = (event.nhits >= self.hparams["n_hits"])
+
+        # Randomly remove edges if needed
+        if "edge_dropping_ratio" in self.hparams:
+            if self.hparams["edge_dropping_ratio"] != 0:
+                edge_mask = (torch.rand(event.edge_index.shape[1]) >= self.hparams["edge_dropping_ratio"])
+                event.edge_index = event.edge_index[:, edge_mask]
+                event.y, event.y_pid = event.y[edge_mask], event.y_pid[edge_mask]
+
+        for i in ["y", "y_pid"]:
+            graph_mask = mask[event.edge_index].all(0)
+            event[i] = event[i][graph_mask]
+
+        for i in ["modulewise_true_edges", "signal_true_edges", "edge_index"]:
+            event[i] = event[i][:, mask[event[i]].all(0)]
+            event[i] = inverse_mask[event[i]]
+
+        for i in ["x", "cell_data", "pid", "hid", "pt", "signal_mask"]:
+            event[i] = event[i][mask]
+
+        if self.hparams["primary"]:
+            event.primary = event.primary[mask]
+'''
 def main():
   # Set filepaths and initialize variables 
-  #input_path = "/data/FNAL/events/train/*"
+  input_path = "/data/FNAL/events/train/*"
   #super_path = "/data/FNAL/processed/train/*"
   #cluster_path = "/data/FNAL/processed/train/*"
-  #output_path = "/data/FNAL/coarse_events/10p-res/train/"
+  #output_path = "/data/FNAL/coarse_events/10p-res/train/*"
+  output_path = "/data/FNAL/coarse_events/train/*"
 
   #input_path = "/data/FNAL/events/test/*"
   #super_path = "/data/FNAL/processed_no_emb/test/*"
   #cluster_path = "/data/FNAL/processed/test/*"
   #output_path = "/data/FNAL/coarse_events/10p-res/test/"
 
-  input_path = "/data/FNAL/events/val/*"
-  super_path = "/data/FNAL/processed_no_emb/val/*"
-  cluster_path = "/data/FNAL/processed/val/*"
-  output_path = "/data/FNAL/coarse_events/10p-res/val/"
+  #input_path = "/data/FNAL/events/val/*"
+  #super_path = "/data/FNAL/processed_no_emb/val/*"
+  #cluster_path = "/data/FNAL/processed/val/*"
+  #output_path = "/data/FNAL/coarse_events/25p-res/val/"
+  #output_path = "/data/FNAL/coarse_events/val/*"
 
   #'''
   event_dir = glob(input_path)
+  subevent_dir = glob(output_path)
+  y_stats(event_dir, subevent_dir)
+  '''
   resolution = 0.10
   data = create_coarse_data(output_path, event_dir, resolution)
-  #visualize_data(input_path, super_path, cluster_path)
-  '''
+  visualize_data(input_path, super_path, cluster_path)
+
   config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
   with open(config_path) as f:
     hparams = yaml.load(f, Loader=yaml.FullLoader)

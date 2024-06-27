@@ -114,10 +114,10 @@ class HierarchicalGNNBlock(nn.Module):
         Initialise the Lightning Module that can scan over different GNN training regimes
         """                
         self.data_dir = hparams["data_dir"]
-        self.super_dir = hparams["super_dir"]
+        #self.super_dir = hparams["super_dir"]
         self.read_counter = 0
         self.write_counter = 0
-        self.create_dset = True #False
+        self.create_dset = False
  
         self.supernode_encoder = make_mlp(
             hparams["latent"],
@@ -139,6 +139,7 @@ class HierarchicalGNNBlock(nn.Module):
             output_activation=hparams["hidden_activation"],
             hidden_activation=hparams["hidden_activation"],
         )
+
 
         # Initialize GNN blocks
         if hparams["share_weight"]:
@@ -249,7 +250,7 @@ class HierarchicalGNNBlock(nn.Module):
               conn_comp_time = time()
             # Connected Components
             mask = likelihood >= self.score_cut.to(likelihood.device)
-            print("mask dim = ", len(mask))
+            #print("mask dim = ", len(mask))
             try:
                 G = cugraph.Graph()
                 df = cudf.DataFrame({"src": cp.asarray(graph[0, mask]),
@@ -286,6 +287,8 @@ class HierarchicalGNNBlock(nn.Module):
         filename = str(self.write_counter)
         filepath = super_dir + '/train/' + filename
         print("Filepath = ", filepath)
+   
+
 
         # Save newly generated super graph & corresponding data to file
         input_dict = {}
@@ -341,9 +344,7 @@ class HierarchicalGNNBlock(nn.Module):
         if self.profiling:
           construct_time = time()
         print("graph size = ", graph.size())
-        #super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
-        super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = 4)
-        print("supergraph size = ", super_graph.size())
+        super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
         bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
         if self.profiling:
           construct_time = time() - construct_time
@@ -357,12 +358,13 @@ class HierarchicalGNNBlock(nn.Module):
         supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
         supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
         superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
+
         if self.profiling:
           graph_init_time = time() - graph_init_time
           data_write_time = time()
         
         # Save preprocessed graphs to data directory
-        self.save_supergraph_data(x, graph, super_graph, supernodes, superedges, batch)
+        #self.save_supergraph_data(x, graph, super_graph, supernodes, superedges, batch)
 
         if self.profiling:
           data_write_time = time() - data_write_time
@@ -411,13 +413,6 @@ class HierarchicalGNNBlock(nn.Module):
             graph_init_time = time()
           supernodes = scatter_add((nn.functional.normalize(nodes, p=1)[bipartite_graph[0]])*bipartite_edge_weights, bipartite_graph[1], dim=0, dim_size=means.shape[0])
           supernodes = torch.cat([means, checkpoint(self.supernode_encoder, supernodes)], dim = -1)
-          print("supernode dim = ", supernodes.size())
-          #print("supernode = ", supernodes)
-          print("node dim = ", nodes.size())
-          print("x dim = ", x.size())
-          print("x = ", x)
-          print("means dim = ", means.size())
-          #print("means = ", means)
           superedges = checkpoint(self.superedge_encoder, torch.cat([supernodes[super_graph[0]], supernodes[super_graph[1]]], dim=1))
           if self.profiling:
             graph_init_time = time() - graph_init_time
