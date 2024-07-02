@@ -63,6 +63,10 @@ def create_coarse_data(output_path, event_dir, resolution):
     print("Edge indices size = ", len(edge_indices))
     edge_indices = edge_indices.cpu()
 
+    print("edge idx = ", event.edge_index)
+    print("modwise true edges = ", event.modulewise_true_edges)
+    print("signal true edges = ", event.signal_true_edges)
+
     node_indices = None
     for feature in edge_feats:
       edge_feat = getattr(event, feature, None)
@@ -102,10 +106,15 @@ def create_coarse_data(output_path, event_dir, resolution):
         graph_mask = mask[subedge_feats[2]].all(0)
     
     subedge_true_feats = []
+    edge_index = subedge_feats[2]
+    src_nodes = edge_index[0, :]
+    dst_nodes = edge_index[1, :]
     for feature in edge_true_feats:
       edge_true_feat = getattr(event, feature, None)
-      print("Feature = ", feature, "Feature size = ", edge_feat.size())
-      subedge_true_feat = edge_true_feat
+      print("Feature = ", feature, "Edge true feature size = ", edge_feat.size())
+      #subedge_true_feat = edge_true_feat[np.isin(edge_true_feat, np.concatenate((src_nodes, dst_nodes)))]
+      subedge_true_feat = edge_true_feat[torch.isin(edge_true_feat, torch.cat((src_nodes, dst_nodes)))]
+      print("Feature = ", feature, "Subedge true feature size = ", subedge_feat.size())
       subedge_true_feats.append(subedge_true_feat)
     
     # Apply mask to event graph features
@@ -329,28 +338,28 @@ def test_dataloader(event):
 '''
 def main():
   # Set filepaths and initialize variables 
-  input_path = "/data/FNAL/events/train/*"
+  #input_path = "/data/FNAL/events/train/*"
   #super_path = "/data/FNAL/processed/train/"
   #cluster_path = "/data/FNAL/processed/train/"
-  output_path = "/data/FNAL/coarse_events/10p-res/train/"
+  #output_path = "/data/FNAL/coarse_events/50p-res/train/"
   #output_path = "/data/FNAL/coarse_events/train/"
 
   #input_path = "/data/FNAL/events/test/*"
   #super_path = "/data/FNAL/processed_no_emb/test/*"
   #cluster_path = "/data/FNAL/processed/test/*"
-  #output_path = "/data/FNAL/coarse_events/10p-res/test/"
+  #output_path = "/data/FNAL/coarse_events/50p-res/test/"
 
-  #input_path = "/data/FNAL/events/val/*"
+  input_path = "/data/FNAL/events/val/*"
   #super_path = "/data/FNAL/processed_no_emb/val/*"
   #cluster_path = "/data/FNAL/processed/val/*"
-  #output_path = "/data/FNAL/coarse_events/10p-res/val/"
+  output_path = "/data/FNAL/coarse_events/50p-res/val/"
   #output_path = "/data/FNAL/coarse_events/25p-res/val/"
 
   event_dir = glob(input_path)
   #subevent_dir = glob(output_path)
   #y_stats(event_dir, subevent_dir)
   
-  resolution = 0.10
+  resolution = 0.50
   data = create_coarse_data(output_path, event_dir, resolution)
   #visualize_data(input_path, super_path, cluster_path)
   #'''
