@@ -71,7 +71,6 @@ def create_coarse_data(output_path, event_dir, resolution):
         subedge_feat = edge_feat[:, edge_indices]
         node_indices = set(subedge_feat[0]).union(set(subedge_feat[1]))
         node_indices = torch.tensor(list(node_indices), dtype=torch.int64)
-        print("Node indices upon creation = ", node_indices)
         node_indices = node_indices.cpu()
       else:
         subedge_feat = edge_feat[edge_indices]
@@ -83,43 +82,24 @@ def create_coarse_data(output_path, event_dir, resolution):
       print("Error: `event.edge_index` contains out-of-bounds indices.")
       print(f"Maximum index in `event.edge_index`: {subedge_feats[2].max()}")
       print(f"Size of `mask` along dimension 0: {len(node_indices)}")
+      temp_node_len = len(node_indices)
 
       # Filter out columns with out-of-bounds indices
-      #valid_indices = (subedge_feats[2] < len(node_indices)).all(0)
-      edge_index = subedge_feats[2]
-      mask_size = len(node_indices)
-      valid_mask = torch.zeros(mask_size, dtype=torch.bool)
-      for col in range(edge_index.shape[1]):
-          val = edge_index[:, col]
-          if (val[0] > mask_size) or (val[1] > mask_size):
-            valid_mask[col] = False
-          else:
-            valid_mask[col] = True
-      valid_indices = [i for i, val in enumerate(valid_mask) if val == True]
-      print("valid mask size = ", len(valid_mask))
-      #print("valid indices = ", valid_indices)
-
-      for subedge_feat in subedge_feats:
-        print("BEFORE subedge feat and size = ", subedge_feat, len(subedge_feat))
-        print("MAX VS NODE IDX LEN", subedge_feat.max(), len(node_indices))
+      valid_indices = (subedge_feats[2] < len(node_indices)).all(0)
+      for i, subedge_feat in enumerate(subedge_feats):
         if subedge_feat.dim() > 1:
-          subedge_feat = subedge_feat[:, valid_indices]
-          #node_indices = set(subedge_feat[0]).union(set(subedge_feat[1]))
-          #node_indices = torch.tensor(list(node_indices), dtype=torch.int64)
-          node_indices = node_indices[valid_mask]
+          subedge_feats[i] = subedge_feat[:, valid_indices]
+          node_indices = set(subedge_feat[0]).union(set(subedge_feat[1]))
+          node_indices = torch.tensor(list(node_indices), dtype=torch.int64)
           node_indices = node_indices.cpu()
         else:
-          subedge_feat = subedge_feat[valid_indices]
-        print("AFTER subedge feat and size = ", subedge_feat, len(subedge_feat))
-      #event.edge_index = event.edge_index[:, valid_indices]
-      print("Size of valid indices array = ", len(valid_indices))
-      print("Size of node indices array = ", len(node_indices))
-      print("Max in edge index array = ", subedge_feats[2].max())
-      print("Torch Max in edge index array = ", torch.max(subedge_feats[2]))
-      #print("Valid indices = ", valid_indices)
-      print("Node indices = ", node_indices)
-      print("New node indices array = ", node_indices[valid_mask])
-      print("New size of node indices array = ", len(node_indices[valid_mask]))
+          subedge_feats[i] = subedge_feat[valid_indices]
+
+      # TEST IF OUT OF INDEX ERROR OCCURS
+      node_len = len(node_indices)
+      mask = torch.zeros(node_len, dtype=torch.bool)
+      for i in subedge_feats[0]:
+        graph_mask = mask[subedge_feats[2]].all(0)
     
     subedge_true_feats = []
     for feature in edge_true_feats:
@@ -153,7 +133,7 @@ def create_coarse_data(output_path, event_dir, resolution):
                    'edge_index': subedge_feats[2], \
                    'modulewise_true_edges': subedge_true_feats[0], \
                    'signal_true_edges': subedge_true_feats[1]}
-    #filename = save_data(event, coarse_dict, output_path, filename)
+    filename = save_data(event, coarse_dict, output_path, filename)
     # Count true instances in y and y_pid labels
     y = subedge_feats[0]
     y_pid = subedge_feats[1]
@@ -355,16 +335,16 @@ def main():
   output_path = "/data/FNAL/coarse_events/10p-res/train/"
   #output_path = "/data/FNAL/coarse_events/train/"
 
-  input_path = "/data/FNAL/events/test/*"
+  #input_path = "/data/FNAL/events/test/*"
   #super_path = "/data/FNAL/processed_no_emb/test/*"
   #cluster_path = "/data/FNAL/processed/test/*"
-  output_path = "/data/FNAL/coarse_events/10p-res/test/"
+  #output_path = "/data/FNAL/coarse_events/10p-res/test/"
 
   #input_path = "/data/FNAL/events/val/*"
   #super_path = "/data/FNAL/processed_no_emb/val/*"
   #cluster_path = "/data/FNAL/processed/val/*"
   #output_path = "/data/FNAL/coarse_events/10p-res/val/"
-  #output_path = "/data/FNAL/coarse_events/val/"
+  #output_path = "/data/FNAL/coarse_events/25p-res/val/"
 
   event_dir = glob(input_path)
   #subevent_dir = glob(output_path)
