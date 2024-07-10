@@ -341,25 +341,24 @@ def main():
   #input_path = "/data/FNAL/events/train/*"
   #super_path = "/data/FNAL/processed/train/"
   #cluster_path = "/data/FNAL/processed/train/"
-  #output_path = "/data/FNAL/coarse_events/50p-res/train/"
+  #output_path = "/data/FNAL/coarse_events/25p-res/train/"
   #output_path = "/data/FNAL/coarse_events/train/"
 
   #input_path = "/data/FNAL/events/test/*"
   #super_path = "/data/FNAL/processed_no_emb/test/*"
   #cluster_path = "/data/FNAL/processed/test/*"
-  #output_path = "/data/FNAL/coarse_events/50p-res/test/"
+  #output_path = "/data/FNAL/coarse_events/25p-res/test/"
 
   input_path = "/data/FNAL/events/val/*"
   #super_path = "/data/FNAL/processed_no_emb/val/*"
   #cluster_path = "/data/FNAL/processed/val/*"
-  output_path = "/data/FNAL/coarse_events/50p-res/val/"
-  #output_path = "/data/FNAL/coarse_events/25p-res/val/"
+  output_path = "/data/FNAL/coarse_events/25p-res/val/"
 
   event_dir = glob(input_path)
   #subevent_dir = glob(output_path)
   #y_stats(event_dir, subevent_dir)
   
-  resolution = 0.50
+  resolution = 0.25
   data = create_coarse_data(output_path, event_dir, resolution)
   #visualize_data(input_path, super_path, cluster_path)
   #'''

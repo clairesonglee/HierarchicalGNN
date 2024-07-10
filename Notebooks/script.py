@@ -25,15 +25,15 @@ checkpoint_callback = ModelCheckpoint(
 
 def main():
     # model_name = input("input model ID/name")
-    model_name = "5"
+    model_name = "4"
     model = model_selector(model_name)
     kaiming_init(model)
 
     # logger = WandbLogger(project="TrackML_1GeV")
     #logger = WandbLogger(project="EdgeClassifier")
-    #logger = WandbLogger(project="BipartiteClassification")
-    logger = None
-    '''
+    logger = WandbLogger(project="BipartiteClassification")
+    #logger = None
+    #'''
     trainer = Trainer(
         gpus=1,
         max_epochs=model.hparams["max_epochs"],
@@ -43,8 +43,8 @@ def main():
         callbacks=[checkpoint_callback],
         log_every_n_steps=300,
         default_root_dir=ROOT_PATH)
-    '''
-    trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH)
+    #'''
+    # trainer = Trainer(gpus=1, max_epochs=1, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 20, default_root_dir=ROOT_PATH)
     # trainer = Trainer(gpus=1, max_epochs=5, gradient_clip_val=0.5, logger=logger, num_sanity_val_steps=2, callbacks=[checkpoint_callback], log_every_n_steps = 15, default_root_dir=ROOT_PATH, limit_train_batches=5)
     trainer.fit(model)
 
@@ -52,8 +52,7 @@ def main():
 def resume():
     # training_id = input("input the wandb run ID to resume the run")
     training_id = "1pxhnaa6"
-    model_path = "{}{}{}/checkpoints/last.ckpt".format(
-        ROOT_PATH, "TrackML_1GeV/", training_id)
+    model_path = "{}{}{}/checkpoints/last.ckpt".format(ROOT_PATH, "TrackML_1GeV/", training_id)
     ckpt = torch.load(model_path)
     model = model_selector(
         ckpt["hyper_parameters"]["model"],
@@ -79,8 +78,12 @@ def resume():
 
 def update(save_ckpt):
     # Load input and setup logger
-    training_id = "TrackML_1GeV/3ab6ef6b"
-    # logger = WandbLogger(project="BipartiteClassification")
+    # training_id = "BipartiteClassification/2zprehb6" # coarse data 0.10 luke
+    # training_id = "BipartiteClassification/2ms0xur6" # coarse data 0.25 leia
+    training_id = "BipartiteClassification/3uaknzfe" # coarse data 0.50 luke
+    # training_id = "TrackML_1GeV/208iaq7z"
+    # training_id = "TrackML_1GeV/3ab6ef6b"
+    logger = WandbLogger(project="BipartiteClassification")
 
     # training_id = "TrackML_1GeV/ekrldf3x"
     # logger = WandbLogger(project="TrackML_1GeV")
@@ -92,11 +95,14 @@ def update(save_ckpt):
 
     # Load checkpoint from Hierarchical Pooling NN
     # model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
-    # model_path = "{}{}/checkpoints/epoch=49-step=15000.ckpt".format(ROOT_PATH, training_id)
-    # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
-    model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(
-        ROOT_PATH, training_id)
     # model_path = "{}{}/checkpoints/epoch=4-step=1500.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
+    model_path = "{}{}/checkpoints/epoch=14-step=4500.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=29-step=9000.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=39-step=12000.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=49-step=15000.ckpt".format(ROOT_PATH, training_id)
     ckpt = torch.load(model_path)
 
 
@@ -144,7 +150,11 @@ def update(save_ckpt):
 
 def switch(state_dict, save_ckpt):
     # Load input and setup logger
-    training_id = "TrackML_1GeV/3ab6ef6b"  # saved gMRT
+    # training_id = "BipartiteClassification/2zprehb6" # coarse data 0.10 luke
+    # training_id = "BipartiteClassification/2ms0xur6" # coarse data 0.25 leia
+    training_id = "BipartiteClassification/3uaknzfe" # coarse data 0.50
+    # training_id = "TrackML_1GeV/208iaq7z"  
+    # training_id = "TrackML_1GeV/3ab6ef6b"  # saved gMRT
     logger = WandbLogger(project="BipartiteClassification")
 
     # training_id = "TrackML_1GeV/ekrldf3x"
@@ -159,11 +169,14 @@ def switch(state_dict, save_ckpt):
             ROOT_PATH, training_id)
     else:
         # model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
-        # model_path = "{}{}/checkpoints/epoch=49-step=15000.ckpt".format(ROOT_PATH, training_id)
-        # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
-        model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(
-            ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=4-step=1500.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
+        model_path = "{}{}/checkpoints/epoch=14-step=4500.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=29-step=9000.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=39-step=12000.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=49-step=15000.ckpt".format(ROOT_PATH, training_id)
     ckpt = torch.load(model_path)
 
     # Initialize model and parameters

@@ -31,7 +31,7 @@ class supergMRTBase(LightningModule):
         Initialise the Lightning Module
         """
         self.save_hyperparameters(hparams)
-        self.use_superdataset = False #True
+        self.use_superdataset = True
         self.use_subset = False
         self.num_workers = 16
         #self.epoch_times = pd.DataFrame({'Epoch': [], 'Time': []})

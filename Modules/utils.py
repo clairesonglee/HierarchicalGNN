@@ -67,10 +67,6 @@ class TrackMLDataset(Dataset):
             node_mask[event.edge_index.unique()] = torch.ones(1).bool() # Keep only those nodes with edges attached to it
             mask = mask & node_mask
 
-        print("mask size = ", mask.shape)
-        print("event pt size = ", event.pt.shape)
-        print("y size = ", event.y.shape)
-        
         # Set the pT of noise hits to be 0
         event.pt[event.pid == 0] = 0
         
@@ -98,11 +94,11 @@ class TrackMLDataset(Dataset):
         for i in ["y", "y_pid"]:
             graph_mask = mask[event.edge_index].all(0)
             event[i] = event[i][graph_mask]
-        
+         
         for i in ["modulewise_true_edges", "signal_true_edges", "edge_index"]:
             event[i] = event[i][:, mask[event[i]].all(0)]
             event[i] = inverse_mask[event[i]]
-
+        
         for i in ["x", "cell_data", "pid", "hid", "pt", "signal_mask"]:
             event[i] = event[i][mask]
             

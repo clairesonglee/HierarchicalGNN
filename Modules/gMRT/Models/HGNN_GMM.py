@@ -406,7 +406,7 @@ class HierarchicalGNNBlock(nn.Module):
           if self.profiling:
             center_time = time() - center_time
             construct_time = time()
-          super_graph, super_edge_weights, super_idxs = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
+          super_graph, super_edge_weights = self.super_graph_construction(means, means, sym = True, norm = True, k = self.hparams["supergraph_sparsity"])
           bipartite_graph, bipartite_edge_weights, bipartite_edge_weights_logits = self.bipartite_graph_construction(embeddings, means, sym = False, norm = True, k = self.hparams["bipartitegraph_sparsity"], logits = True)
           if self.profiling:
             construct_time = time() - construct_time

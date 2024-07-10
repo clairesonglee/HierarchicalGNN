@@ -1,7 +1,7 @@
 # Input/output configuration
-data_dir: /data/FNAL/events
-#data_dir: /data/FNAL/coarse_events/25p-res
-#super_dir: /data/FNAL/processed
+#data_dir: /data/FNAL/events
+data_dir: /data/FNAL/coarse_events/10p-res
+super_dir: /data/FNAL/processed
 #super_dir: /data/FNAL/supergraphs
 
 # Dataset parameters
@@ -66,7 +66,7 @@ emb_epoch: 100
 
 # Hierarchical Structure Construction
 bipartitegraph_sparsity: 5
-supergraph_sparsity: 10
+supergraph_sparsity: 5 #10
 min_cluster_size: 3
 cluster_granularity: 5
 
