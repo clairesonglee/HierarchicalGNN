@@ -42,6 +42,106 @@ def create_dataset():
     print("x dim = ", x.size(), "graph dim = ", graph.size())
 
 #def subsampling(x, edge_index, cluster_dict):
+def create_coarse_nodes(output_path, event_dir, resolution):
+  filename = 0
+  y_distrib = []
+
+  for event_path in event_dir:
+    # Load event node and graph data 
+    event = torch.load(event_path)
+    x, edge_index = event.x, event.edge_index
+    event = event.cpu()
+
+    n_nodes = x.size(0)
+    n_subnodes = int(math.floor(n_nodes * resolution))
+    node_indices = torch.tensor(np.random.choice(n_nodes, n_subnodes, replace=False))
+    print("node indices = ", node_indices, "node indices size = ", len(node_indices))
+    print("x size = ", x.size(), "sub x size = ", (x[node_indices]).size())
+
+    matching_cols = np.any(np.isin(np.array(edge_index.cpu()), np.array(node_indices)), axis=0)
+    edge_indices = np.where(matching_cols)[0]
+    subedge_feats = []
+    edge_feats = ['y', 'y_pid', 'edge_index']
+    for feature in edge_feats:
+      edge_feat = getattr(event, feature, None)
+      print("Feature = ", feature, "Feature size = ", edge_feat.size())
+      if edge_feat.dim() > 1:
+        subedge_feat = edge_feat[:, edge_indices]
+      else:
+        subedge_feat = edge_feat[edge_indices]
+      print("Feature = ", feature, "Subfeature size = ", subedge_feat.size())
+      subedge_feats.append(subedge_feat)
+
+    # Avoid out of index error by eliminating edge_index values > len(pid)
+    edge_index = subedge_feats[2]
+    if edge_index.max() >= len(node_indices):
+      print("Error: `event.edge_index` contains out-of-bounds indices.")
+      print(f"Maximum index in `event.edge_index`: {subedge_feats[2].max()}")
+      print(f"Size of `mask` along dimension 0: {len(node_indices)}")
+
+      # Filter out columns with out-of-bounds indices
+      valid_edge_indices = (edge_index < len(node_indices)).all(0)
+      print("valid_edge_indices = ", valid_edge_indices)
+      for i, subedge_feat in enumerate(subedge_feats):
+        print("Feature = ", edge_feats[i], "Original subfeature size = ", subedge_feat.size())
+        if subedge_feat.dim() > 1:
+          filtered_subedge_feat = subedge_feat[:, valid_edge_indices]
+          subedge_feats[i] = filtered_subedge_feat
+        else:
+          filtered_subedge_feat = subedge_feat[valid_edge_indices]
+          subedge_feats[i] = filtered_subedge_feat
+        print("Feature = ", edge_feats[i], "Filtered subfeature size = ", filtered_subedge_feat.size())
+
+      # TEST IF OUT OF INDEX ERROR OCCURS
+      mask = torch.zeros(len(node_indices), dtype=torch.bool)
+      for i in subedge_feats[0]:
+        graph_mask = mask[subedge_feats[2]].all(0)
+      print("Passes DataLoader test")
+
+    subedge_true_feats = []
+    edge_true_feats = ['modulewise_true_edges', 'signal_true_edges']
+    for feature in edge_true_feats:
+      edge_true_feat = getattr(event, feature, None)
+      print("Feature = ", feature, "Edge true feature size = ", edge_feat.size())
+      matching_mask = torch.all(torch.isin(edge_true_feat, edge_index.view(-1)), dim=1)
+      subedge_true_feat = edge_true_feat[matching_mask]
+      print("Feature = ", feature, "Subedge true feature size = ", subedge_feat.size())
+      subedge_true_feats.append(subedge_true_feat)
+
+    # Apply mask to event graph features
+    node_feats = ['x', 'pid', 'hid', 'pt', 'cell_data'] # all have same x dim
+    subnode_feats = []
+    print("Node indices size = ", len(node_indices))
+    for feature in node_feats:
+      node_feat = getattr(event, feature, None)
+      if node_feat.dim() > 1:
+        subnode_feat = node_feat[node_indices,:]
+      else:
+        subnode_feat = node_feat[node_indices]
+      print("Feature = ", feature, "Subfeature size = ", subnode_feat.size())
+      subnode_feats.append(subnode_feat)
+
+    # Build data dictionary and save to file
+    coarse_dict = {'x': subnode_feats[0], \
+                   'pid': subnode_feats[1], \
+                   'hid': subnode_feats[2], \
+                   'pt': subnode_feats[3], \
+                   'cell_data': subnode_feats[4], \
+                   'y': subedge_feats[0], \
+                   'y_pid': subedge_feats[1], \
+                   'edge_index': subedge_feats[2], \
+                   'modulewise_true_edges': subedge_true_feats[0], \
+                   'signal_true_edges': subedge_true_feats[1]}
+    filename = save_data(event, coarse_dict, output_path, filename)
+    # Count true instances in y and y_pid labels
+    y = subedge_feats[0]
+    y_pid = subedge_feats[1]
+    _, counts = y.unique(return_counts=True)
+    ratio = counts[0]/counts[1]
+    y_distrib.append(ratio)
+    # print("Subgraph label distribution = ", y_distrib)
+
+    #break
 
 def create_coarse_data(output_path, event_dir, resolution):
   filename = 0
@@ -233,6 +333,17 @@ def visualize_data(input_path, super_path, cluster_path):
       #plot_input(graph, coords, i)
       #plot_subgraph(graph, coords, i)
 
+def data_statistics(input_path):
+    event_dir = glob(input_path)
+    num_nodes, num_edges = 0, 0
+    for i, event_path in enumerate(event_dir):
+        event = torch.load(event_path)
+        x, y, edge_index = event.x, event.y, event.edge_index
+        num_nodes += x.size(0)
+        num_edges += edge_index.size(1)
+    print("Total number of nodes = ", num_nodes)
+    print("Total number of edges = ", num_edges)
+
 
 def y_stats(event_dir, subevent_dir):
   y_distrib, sub_y_distrib = [], []
@@ -281,86 +392,29 @@ def y_stats(event_dir, subevent_dir):
   print(f"Minimum: {min_value}")
   print(f"Maximum: {max_value}")
 
-'''
-def test_dataloader(event):
-  config_path = "/home/csl782/FNAL/HierarchicalGNN/Modules/gMRT/Configs/HGNN_GMM.yaml"
-  with open(config_path) as f:
-        hparams = yaml.load(f, Loader=yaml.FullLoader)
-        # the MASK tensor filter out hits from event
-        if self.hparams["noise"]:
-            mask = (event.pid == event.pid) # If using noise then only filter out those with nan PID
-        else:
-            mask = (event.pid != 0) # If not using noise then filter out those with PID 0, which represent that they are noise
-        if self.hparams["hard_ptcut"] > 0:
-            mask = mask & (event.pt > self.hparams["hard_ptcut"]) # Hard background cut in pT
-        if self.hparams["remove_isolated"]:
-            node_mask = torch.zeros(event.pid.shape).bool()
-            node_mask[event.edge_index.unique()] = torch.ones(1).bool() # Keep only those nodes with edges attached to it
-            mask = mask & node_mask
-
-        # Set the pT of noise hits to be 0
-        event.pt[event.pid == 0] = 0
-
-        # Provide inverse mask to invert the change when necessary (e.g. track evaluation with not modified files)
-        inverse_mask = torch.zeros(len(event.pid)).long()
-        inverse_mask[mask] = torch.arange(mask.sum())
-        event.inverse_mask = torch.arange(len(mask))[mask]
-
-        # Compute number of hits (nhits) of each particle
-        _, inverse, counts = event.pid.unique(return_inverse = True, return_counts = True)
-        event.nhits = counts[inverse]
-
-        if self.hparams["primary"]:
-            event.signal_mask = ((event.nhits >= self.hparams["n_hits"]) & (event.primary == 1))
-        else:
-            event.signal_mask = (event.nhits >= self.hparams["n_hits"])
-
-        # Randomly remove edges if needed
-        if "edge_dropping_ratio" in self.hparams:
-            if self.hparams["edge_dropping_ratio"] != 0:
-                edge_mask = (torch.rand(event.edge_index.shape[1]) >= self.hparams["edge_dropping_ratio"])
-                event.edge_index = event.edge_index[:, edge_mask]
-                event.y, event.y_pid = event.y[edge_mask], event.y_pid[edge_mask]
-
-        for i in ["y", "y_pid"]:
-            graph_mask = mask[event.edge_index].all(0)
-            event[i] = event[i][graph_mask]
-
-        for i in ["modulewise_true_edges", "signal_true_edges", "edge_index"]:
-            event[i] = event[i][:, mask[event[i]].all(0)]
-            event[i] = inverse_mask[event[i]]
-
-        for i in ["x", "cell_data", "pid", "hid", "pt", "signal_mask"]:
-            event[i] = event[i][mask]
-
-        if self.hparams["primary"]:
-            event.primary = event.primary[mask]
-'''
 def main():
   # Set filepaths and initialize variables 
-  #input_path = "/data/FNAL/events/train/*"
-  #super_path = "/data/FNAL/processed/train/"
-  #cluster_path = "/data/FNAL/processed/train/"
-  #output_path = "/data/FNAL/coarse_events/25p-res/train/"
-  #output_path = "/data/FNAL/coarse_events/train/"
+  input_path = "/data/FNAL/events/train/*"
+  output_path = "/data/FNAL/coarse_nodes/25p-res/train/"
 
   #input_path = "/data/FNAL/events/test/*"
-  #super_path = "/data/FNAL/processed_no_emb/test/*"
-  #cluster_path = "/data/FNAL/processed/test/*"
-  #output_path = "/data/FNAL/coarse_events/25p-res/test/"
+  #output_path = "/data/FNAL/coarse_nodes/25p-res/test/"
 
-  input_path = "/data/FNAL/events/val/*"
-  #super_path = "/data/FNAL/processed_no_emb/val/*"
-  #cluster_path = "/data/FNAL/processed/val/*"
-  output_path = "/data/FNAL/coarse_events/25p-res/val/"
+  #input_path = "/data/FNAL/events/val/*"
+  #output_path = "/data/FNAL/coarse_nodes/25p-res/val/"
 
   event_dir = glob(input_path)
   #subevent_dir = glob(output_path)
   #y_stats(event_dir, subevent_dir)
   
   resolution = 0.25
-  data = create_coarse_data(output_path, event_dir, resolution)
+  #data = create_coarse_data(output_path, event_dir, resolution)
+  #data = create_coarse_nodes(output_path, event_dir, resolution)
   #visualize_data(input_path, super_path, cluster_path)
+
+  data_path = "/data/FNAL/coarse_events/25p-res/train/*"
+  #data_path = "/data/FNAL/events/train/*"
+  data_statistics(data_path)
   #'''
 main()
 
