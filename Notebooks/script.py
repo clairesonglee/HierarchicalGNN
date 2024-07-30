@@ -29,9 +29,6 @@ def main():
     model = model_selector(model_name)
     kaiming_init(model)
 
-    # logger = WandbLogger(project="TrackML_1GeV")
-    # logger = WandbLogger(project="EdgeClassifier")
-    # logger = WandbLogger(project="BipartiteClassification")
     logger = WandbLogger(project="BipartiteClassification-Node")
     # logger = None
     #'''
@@ -75,35 +72,20 @@ def resume():
     trainer.fit(model, ckpt_path=model_path)
 
 # ----------------------------------------------------------------------------------------
-
-
 def update(save_ckpt):
     # Load input and setup logger
-    # training_id = "BipartiteClassification/2np8t389" # UPDATE coarse data 0.10 luke
-    # training_id = "BipartiteClassification/2zprehb6" # coarse data 0.10 luke
-    # training_id = "BipartiteClassification/2ms0xur6" # coarse data 0.25 leia
-    # training_id = "BipartiteClassification/3uaknzfe" # coarse data 0.50 luke
-    # training_id = "TrackML_1GeV/208iaq7z"
-    # training_id = "TrackML_1GeV/3ab6ef6b"
-    # logger = WandbLogger(project="BipartiteClassification")
-
-    training_id = "BipartiteClassification-Node/12gkmk5s" # coarse data 0.25 leia
+    #training_id = "BipartiteClassification-Node/3eat59df" # coarse data 0.10 luke
+    #training_id = "BipartiteClassification-Node/1mj8fl57" # coarse data 0.25 luke
+    training_id = "BipartiteClassification-Node/2uu84p8f" # coarse data 0.50 leia
     logger = WandbLogger(project="BipartiteClassification-Node")
-
-    # training_id = "TrackML_1GeV/ekrldf3x"
-    # logger = WandbLogger(project="TrackML_1GeV")
-
-    # training_id = "EdgeClassifier/2iztxf4e"
-    # logger = WandbLogger(project="EdgeClassifier")
-
     # logger = None
 
     # Load checkpoint from Hierarchical Pooling NN
     # model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
     # model_path = "{}{}/checkpoints/epoch=4-step=1500.ckpt".format(ROOT_PATH, training_id)
-    model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
+    # model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
     # model_path = "{}{}/checkpoints/epoch=14-step=4500.ckpt".format(ROOT_PATH, training_id)
-    # model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
+    model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
     # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
     # model_path = "{}{}/checkpoints/epoch=29-step=9000.ckpt".format(ROOT_PATH, training_id)
     # model_path = "{}{}/checkpoints/epoch=39-step=12000.ckpt".format(ROOT_PATH, training_id)
@@ -116,12 +98,6 @@ def update(save_ckpt):
     model = model_selector(model_name)
     # model = model_selector("4")
     kaiming_init(model)
-    '''
-        print('Checkpoint keys = ', ckpt.keys())
-        print('Prev optim dict len = ', len(ckpt["optimizer_states"]))
-        print('Prev optim dict = ', ckpt["optimizer_states"].keys())
-        print('Curr optim dict len = ', len(optimizer.load_state_dict()))
-        '''
     # Load pretrained parameters from checkpoint when possible
     num_init_params = 11
     prev_state_dict = ckpt["state_dict"]
@@ -155,21 +131,10 @@ def update(save_ckpt):
 
 def switch(state_dict, save_ckpt):
     # Load input and setup logger
-    # training_id = "BipartiteClassification/2np8t389" # UPDATE coarse data 0.10 luke
-    # training_id = "BipartiteClassification/2zprehb6" # coarse data 0.10 luke
-    # training_id = "BipartiteClassification/2ms0xur6" # coarse data 0.25 leia
-    # training_id = "BipartiteClassification/3uaknzfe" # coarse data 0.50
-    # training_id = "TrackML_1GeV/208iaq7z"  
-    # training_id = "TrackML_1GeV/3ab6ef6b"  # saved gMRT
-    training_id = "BipartiteClassification-Node/12gkmk5s" # coarse data 0.25 leia
+    #training_id = "BipartiteClassification-Node/3eat59df" # coarse data 0.10 luke
+    #training_id = "BipartiteClassification-Node/1mj8fl57" # coarse data 0.25 luke
+    training_id = "BipartiteClassification-Node/2uu84p8f" # coarse data 0.50 leia
     logger = WandbLogger(project="BipartiteClassification-Node")
-
-    # training_id = "TrackML_1GeV/ekrldf3x"
-    # logger = WandbLogger(project="TrackML_1GeV")
-
-    # training_id = "EdgeClassifier/2iztxf4e"
-    # logger = WandbLogger(project="EdgeClassifier")
-
     # logger = None
     if save_ckpt:
         model_path = "{}{}/checkpoints/updated.ckpt".format(
@@ -177,9 +142,9 @@ def switch(state_dict, save_ckpt):
     else:
         # model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=4-step=1500.ckpt".format(ROOT_PATH, training_id)
-        model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
+        # model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=14-step=4500.ckpt".format(ROOT_PATH, training_id)
-        # model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
+        model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=29-step=9000.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=39-step=12000.ckpt".format(ROOT_PATH, training_id)
@@ -212,8 +177,6 @@ def switch(state_dict, save_ckpt):
         trainer.fit(model)
 
 # ----------------------------------------------------------------------------------------
-
-
 def test():
     inference_config = {
         "majority_cut": 1.0,
