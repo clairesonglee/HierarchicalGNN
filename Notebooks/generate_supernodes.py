@@ -1,6 +1,7 @@
 import yaml
 import math
 import sys
+import random
 import torch
 import torch.nn as nn
 from torch_scatter import scatter_add, scatter_mean
@@ -41,7 +42,68 @@ def create_dataset():
     x, directed_graph = event.x, event.edge_index
     print("x dim = ", x.size(), "graph dim = ", graph.size())
 
-#def subsampling(x, edge_index, cluster_dict):
+def create_adjacency_list(nodes, edges):
+  adjacency_list = {node: [] for node in nodes}
+  for edge in edges.T:
+    u, v = edge
+    u = u.item()  # Convert tensor to standard type
+    v = v.item()  # Convert tensor to standard type
+    if u in adjacency_list:
+        adjacency_list[u].append(v)
+    if v in adjacency_list:
+        adjacency_list[v].append(u)
+  return adjacency_list
+
+def sample_neighbors(adjacency_list, node, sample_size):
+    neighbors = adjacency_list[node]
+    #print("neighbor len = ", len(neighbors))
+    if len(neighbors) == 0:
+        return None
+    elif len(neighbors) > sample_size:
+        sampled_neighbors = random.sample(neighbors, sample_size)
+    else:
+        sampled_neighbors = random.choices(neighbors, k=sample_size)
+    return sampled_neighbors
+
+def create_sampled_nodes(output_path, event_dir, sample_size=20, iterations=2):
+  filename = 0
+  y_distrib = []
+
+  for event_path in event_dir:
+    # Load event node and graph data 
+    event = torch.load(event_path)
+    x, edge_index = event.x, event.edge_index
+    event = event.cpu()
+    nodes = np.arange(len(x))
+    adjacency_list = create_adjacency_list(nodes, edge_index)
+    #print("nodes = ", nodes, "edges = ", edge_index)
+    #print("adj list = ", adjacency_list)
+    neighborhood_graphs = []
+    max_num_edges = -1
+    
+    for _ in range(iterations):
+        iteration_graphs = []
+        for node in nodes:
+            if node in adjacency_list:
+                # Sample neighbors
+                sampled_neighbors = sample_neighbors(adjacency_list, node, sample_size)
+                # Create the subgraph (node and its sampled neighbors)
+                if sampled_neighbors is not None:
+                  subgraph_nodes = [node] + sampled_neighbors
+                  subgraph_edges = [(node, neighbor) for neighbor in sampled_neighbors]
+                  for neighbor in sampled_neighbors:
+                      for n in adjacency_list[neighbor]:
+                          if n in subgraph_nodes and (neighbor, n) not in subgraph_edges and (n, neighbor) not in subgraph_edges:
+                              subgraph_edges.append((neighbor, n))
+                  iteration_graphs.append((subgraph_nodes, subgraph_edges))
+                  #print("subgraph_nodes = ", subgraph_nodes)
+                  #print("subgraph_edges = ", subgraph_edges)
+                  print("subgraph_nodes size = ", len(subgraph_nodes))
+                  print("subgraph_edges size = ", len(subgraph_edges))
+        neighborhood_graphs.append(iteration_graphs)
+    #print("neighborhood_graphs = ", neighborhood_graphs)
+    break
+
 def create_coarse_nodes(output_path, event_dir, resolution):
   filename = 0
   y_distrib = []
@@ -334,16 +396,51 @@ def visualize_data(input_path, super_path, cluster_path):
       #plot_subgraph(graph, coords, i)
 
 def data_statistics(input_path):
+    print("Input Directory = ", input_path)
     event_dir = glob(input_path)
-    num_nodes, num_edges = 0, 0
+    total_num_nodes, total_num_edges = 0, 0
+    num_nodes, num_edges = [], []
     for i, event_path in enumerate(event_dir):
         event = torch.load(event_path)
         x, y, edge_index = event.x, event.y, event.edge_index
-        num_nodes += x.size(0)
-        num_edges += edge_index.size(1)
-    print("Total number of nodes = ", num_nodes)
-    print("Total number of edges = ", num_edges)
+        num_node, num_edge = x.size(0), edge_index.size(1)
+        num_nodes.append(num_node)
+        num_edges.append(num_edge)
+        total_num_nodes += num_node
+        total_num_edges += num_edge
+    print("Total number of nodes = ", total_num_nodes)
+    print("Total number of edges = ", total_num_edges)
+    print("====================================")
 
+    num_nodes = np.array(num_nodes)
+    mean_value = np.mean(num_nodes)
+    median_value = np.median(num_nodes)
+    std_dev_value = np.std(num_nodes)
+    min_value = np.min(num_nodes)
+    max_value = np.max(num_nodes)
+
+    print("Node Data Statistics")
+    print(f"Mean: {mean_value}")
+    print(f"Median: {median_value}")
+    print(f"Standard Deviation: {std_dev_value}")
+    print(f"Minimum: {min_value}")
+    print(f"Maximum: {max_value}")
+    print("====================================")
+
+    num_edges = np.array(num_edges)
+    mean_value = np.mean(num_edges)
+    median_value = np.median(num_edges)
+    std_dev_value = np.std(num_edges)
+    min_value = np.min(num_edges)
+    max_value = np.max(num_edges)
+
+    print("Edge Data Statistics")
+    print(f"Mean: {mean_value}")
+    print(f"Median: {median_value}")
+    print(f"Standard Deviation: {std_dev_value}")
+    print(f"Minimum: {min_value}")
+    print(f"Maximum: {max_value}")
+    print("====================================")
 
 def y_stats(event_dir, subevent_dir):
   y_distrib, sub_y_distrib = [], []
@@ -393,28 +490,35 @@ def y_stats(event_dir, subevent_dir):
   print(f"Maximum: {max_value}")
 
 def main():
-  # Set filepaths and initialize variables 
+  # Set filepaths and initialize variables
+
   input_path = "/data/FNAL/events/train/*"
-  output_path = "/data/FNAL/coarse_nodes/25p-res/train/"
+  output_path = "/data/FNAL/coarse_nodes/10p-res/train/"
 
   #input_path = "/data/FNAL/events/test/*"
-  #output_path = "/data/FNAL/coarse_nodes/25p-res/test/"
+  #output_path = "/data/FNAL/coarse_nodes/10p-res/test/"
 
   #input_path = "/data/FNAL/events/val/*"
-  #output_path = "/data/FNAL/coarse_nodes/25p-res/val/"
+  #output_path = "/data/FNAL/coarse_nodes/10p-res/val/"
 
   event_dir = glob(input_path)
   #subevent_dir = glob(output_path)
   #y_stats(event_dir, subevent_dir)
   
-  resolution = 0.25
-  #data = create_coarse_data(output_path, event_dir, resolution)
+  resolution = 0.10
   #data = create_coarse_nodes(output_path, event_dir, resolution)
   #visualize_data(input_path, super_path, cluster_path)
 
-  data_path = "/data/FNAL/coarse_events/25p-res/train/*"
+  input_path = "/data/FNAL/events/train/*"
+  output_path = "/data/FNAL/sampled_nodes/train/"
+
+  sample_size = 5
+  iterations = 1
+  data = create_sampled_nodes(output_path, event_dir, sample_size, iterations)
+
+  #data_path = "/data/FNAL/coarse_nodes/50p-res/train/*"
   #data_path = "/data/FNAL/events/train/*"
-  data_statistics(data_path)
+  #data_statistics(data_path)
   #'''
 main()
 
