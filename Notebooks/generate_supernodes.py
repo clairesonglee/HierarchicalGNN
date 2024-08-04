@@ -69,7 +69,7 @@ def create_sampled_nodes(output_path, event_dir, sample_size=20, iterations=2):
   filename = 0
   y_distrib = []
 
-  for event_path in event_dir:
+  for idx, event_path in enumerate(event_dir):
     # Load event node and graph data 
     event = torch.load(event_path)
     x, edge_index = event.x, event.edge_index
@@ -78,8 +78,9 @@ def create_sampled_nodes(output_path, event_dir, sample_size=20, iterations=2):
     adjacency_list = create_adjacency_list(nodes, edge_index)
     #print("nodes = ", nodes, "edges = ", edge_index)
     #print("adj list = ", adjacency_list)
-    neighborhood_graphs = []
     max_num_edges = -1
+    subgraph_nodes, subgraph_edges = None, None
+    node_indices, edge_indices = None, None
     
     for _ in range(iterations):
         iteration_graphs = []
@@ -96,12 +97,89 @@ def create_sampled_nodes(output_path, event_dir, sample_size=20, iterations=2):
                           if n in subgraph_nodes and (neighbor, n) not in subgraph_edges and (n, neighbor) not in subgraph_edges:
                               subgraph_edges.append((neighbor, n))
                   iteration_graphs.append((subgraph_nodes, subgraph_edges))
-                  #print("subgraph_nodes = ", subgraph_nodes)
-                  #print("subgraph_edges = ", subgraph_edges)
-                  print("subgraph_nodes size = ", len(subgraph_nodes))
-                  print("subgraph_edges size = ", len(subgraph_edges))
-        neighborhood_graphs.append(iteration_graphs)
-    #print("neighborhood_graphs = ", neighborhood_graphs)
+            if len(subgraph_edges) > max_num_edges:
+                node_indices = subgraph_nodes
+                edge_indices = subgraph_edges
+                max_num_edges = len(subgraph_edges)
+    print("max num edges = ", max_num_edges)
+    print("subgraph nodes = ", node_indices)
+    print("subgraph edge = ", edge_indices)
+
+    matching_cols = np.any(np.isin(np.array(edge_index.cpu()), np.array(node_indices)), axis=0)
+    print("matching cols = ", matching_cols)
+    edge_indices = np.where(matching_cols)[0]
+    subedge_feats = []
+    edge_feats = ['y', 'y_pid', 'edge_index']
+    for feature in edge_feats:
+      edge_feat = getattr(event, feature, None)
+      print("Feature = ", feature, "Feature size = ", edge_feat.size())
+      if edge_feat.dim() > 1:
+        subedge_feat = edge_feat[:, edge_indices]
+      else:
+        subedge_feat = edge_feat[edge_indices]
+      print("Feature = ", feature, "Subfeature size = ", subedge_feat.size())
+      subedge_feats.append(subedge_feat)
+
+    # Avoid out of index error by eliminating edge_index values > len(pid)
+    edge_index = subedge_feats[2]
+    if edge_index.max() >= len(node_indices):
+      print("Error: `event.edge_index` contains out-of-bounds indices.")
+      print(f"Maximum index in `event.edge_index`: {subedge_feats[2].max()}")
+      print(f"Size of `mask` along dimension 0: {len(node_indices)}")
+
+      # Filter out columns with out-of-bounds indices
+      valid_edge_indices = (edge_index < len(node_indices)).all(0)
+      print("valid_edge_indices = ", valid_edge_indices)
+      for i, subedge_feat in enumerate(subedge_feats):
+        print("Feature = ", edge_feats[i], "Original subfeature size = ", subedge_feat.size())
+        if subedge_feat.dim() > 1:
+          filtered_subedge_feat = subedge_feat[:, valid_edge_indices]
+          subedge_feats[i] = filtered_subedge_feat
+        else:
+          filtered_subedge_feat = subedge_feat[valid_edge_indices]
+          subedge_feats[i] = filtered_subedge_feat
+        print("Feature = ", edge_feats[i], "Filtered subfeature size = ", filtered_subedge_feat.size())
+
+      # TEST IF OUT OF INDEX ERROR OCCURS
+      mask = torch.zeros(len(node_indices), dtype=torch.bool)
+      for i in subedge_feats[0]:
+        graph_mask = mask[subedge_feats[2]].all(0)
+      print("Passes DataLoader test")
+
+    subedge_true_feats = []
+    edge_true_feats = ['modulewise_true_edges', 'signal_true_edges']
+    for feature in edge_true_feats:
+      edge_true_feat = getattr(event, feature, None)
+      print("Feature = ", feature, "Edge true feature size = ", edge_true_feat.size())
+      matching_mask = torch.all(torch.isin(edge_true_feat, edge_index.view(-1)), dim=1)
+      subedge_true_feat = edge_true_feat[matching_mask]
+      print("Feature = ", feature, "Subedge true feature size = ", subedge_true_feat.size())
+      subedge_true_feats.append(subedge_true_feat)
+
+    # Apply mask to event graph features
+    node_feats = ['x', 'pid', 'hid', 'pt', 'cell_data'] # all have same x dim
+    subnode_feats = []
+    print("Node indices size = ", len(node_indices))
+    for feature in node_feats:
+      node_feat = getattr(event, feature, None)
+      if node_feat.dim() > 1:
+        subnode_feat = node_feat[node_indices,:]
+      else:
+        subnode_feat = node_feat[node_indices]
+      print("Feature = ", feature, "Subfeature size = ", subnode_feat.size())
+
+    # Build data dictionary and save to file
+    coarse_dict = {'x': subnode_feats[0], \
+                   'pid': subnode_feats[1], \
+                   'hid': subnode_feats[2], \
+                   'pt': subnode_feats[3], \
+                   'cell_data': subnode_feats[4], \
+                   'y': subedge_feats[0], \
+                   'y_pid': subedge_feats[1], \
+                   'edge_index': subedge_feats[2], \
+                   'modulewise_true_edges': subedge_true_feats[0], \
+                   'signal_true_edges': subedge_true_feats[1]}
+    #filename = save_data(event, coarse_dict, output_path, filename)
     break
 
 def create_coarse_nodes(output_path, event_dir, resolution):
@@ -164,10 +242,10 @@ def create_coarse_nodes(output_path, event_dir, resolution):
     edge_true_feats = ['modulewise_true_edges', 'signal_true_edges']
     for feature in edge_true_feats:
       edge_true_feat = getattr(event, feature, None)
-      print("Feature = ", feature, "Edge true feature size = ", edge_feat.size())
+      print("Feature = ", feature, "Edge true feature size = ", edge_true_feat.size())
       matching_mask = torch.all(torch.isin(edge_true_feat, edge_index.view(-1)), dim=1)
       subedge_true_feat = edge_true_feat[matching_mask]
-      print("Feature = ", feature, "Subedge true feature size = ", subedge_feat.size())
+      print("Feature = ", feature, "Subedge true feature size = ", subedge_true_feat.size())
       subedge_true_feats.append(subedge_true_feat)
 
     # Apply mask to event graph features

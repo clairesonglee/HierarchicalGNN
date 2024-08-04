@@ -174,7 +174,7 @@ class HierarchicalGNNBlock(nn.Module):
         self.epoch_graph_construct_time = 0.
    
         # Set profiling flag
-        self.profiling = True
+        self.profiling = False #True
         if self.profiling:
           self.fd = open('training_graph_dims.csv','w')
           header = ['Mean', 'Node', 'Edge', 'Supernode', 'Superedge']
@@ -373,7 +373,7 @@ class BC_HierarchicalGNN_GMM(BipartiteClassificationBase):
     def __init__(self, hparams):
         super().__init__(hparams) 
 
-        self.profiling = True
+        self.profiling = False #True
         if self.profiling:
           init_time = time()
         

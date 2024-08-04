@@ -74,9 +74,9 @@ def resume():
 # ----------------------------------------------------------------------------------------
 def update(save_ckpt):
     # Load input and setup logger
-    #training_id = "BipartiteClassification-Node/3eat59df" # coarse data 0.10 luke
+    training_id = "BipartiteClassification-Node/3eat59df" # coarse data 0.10 luke
     #training_id = "BipartiteClassification-Node/1mj8fl57" # coarse data 0.25 luke
-    training_id = "BipartiteClassification-Node/2uu84p8f" # coarse data 0.50 leia
+    #training_id = "BipartiteClassification-Node/29jmrdv6" # coarse data 0.50 leia
     logger = WandbLogger(project="BipartiteClassification-Node")
     # logger = None
 
@@ -131,9 +131,9 @@ def update(save_ckpt):
 
 def switch(state_dict, save_ckpt):
     # Load input and setup logger
-    #training_id = "BipartiteClassification-Node/3eat59df" # coarse data 0.10 luke
+    training_id = "BipartiteClassification-Node/3eat59df" # coarse data 0.10 luke
     #training_id = "BipartiteClassification-Node/1mj8fl57" # coarse data 0.25 luke
-    training_id = "BipartiteClassification-Node/2uu84p8f" # coarse data 0.50 leia
+    #training_id = "BipartiteClassification-Node/29jmrdv6" # coarse data 0.50 leia
     logger = WandbLogger(project="BipartiteClassification-Node")
     # logger = None
     if save_ckpt:
@@ -142,7 +142,7 @@ def switch(state_dict, save_ckpt):
     else:
         # model_path = "{}{}/checkpoints/last.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=4-step=1500.ckpt".format(ROOT_PATH, training_id)
-        # model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
+        #model_path = "{}{}/checkpoints/epoch=9-step=3000.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=14-step=4500.ckpt".format(ROOT_PATH, training_id)
         model_path = "{}{}/checkpoints/epoch=19-step=6000.ckpt".format(ROOT_PATH, training_id)
         # model_path = "{}{}/checkpoints/epoch=24-step=7500.ckpt".format(ROOT_PATH, training_id)
